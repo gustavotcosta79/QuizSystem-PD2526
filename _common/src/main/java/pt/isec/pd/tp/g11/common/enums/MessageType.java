@@ -9,5 +9,18 @@ public enum MessageType implements Serializable {
     CLIENT_REQUEST_SERVER, //pedido do cliente a perguntar quem é o servidor
     CLIENT_RESPONSE_SERVER, //resposta da diretoria com os dados do servidor
 
+    // --- NOVOS TIPOS PARA TCP (LOGIN E REGISTO) ---
+    LOGIN_REQUEST,      // Cliente -> Servidor (Payload: String[] {email, pass})
+    REGISTER_ESTUDANTE, // Cliente -> Servidor (Payload: Estudante)
+    REGISTER_DOCENTE,   // Cliente -> Servidor (Payload: Docente + código)
+
+    LOGIN_SUCCESS,      // Servidor -> Cliente (Payload: User)
+    LOGIN_FAILED,       // Servidor -> Cliente (Payload: String "Erro...")
+    REGISTER_SUCCESS,   // Servidor -> Cliente (Sem payload)
+    REGISTER_FAILED,    // Servidor -> Cliente (Payload: String "Erro...")
+
+    // --- Tipos Futuros para TCP (Perguntas, etc.) ---
+    // CREATE_QUESTION, GET_QUESTIONS, SUBMIT_ANSWER, etc.
+
     ERROR // Para mensagens de erro genéricas
 }

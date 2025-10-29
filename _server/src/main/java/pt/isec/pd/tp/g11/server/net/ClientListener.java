@@ -6,31 +6,35 @@ import java.net.Socket;
 public class ClientListener extends Thread {
 
     private final ServerSocket serverSocket;
-    //private final DataManager dbManager;
+    // private final DatabaseManager dbManager; // Vais precisar de passar isto
 
     public ClientListener (ServerSocket serverSocket /*,DatabaseManager dbManager*/){
         this.serverSocket = serverSocket;
-        //this.dbManager = dbManager;
+        // this.dbManager = dbManager;
+        setName("ClientListener"); // Boa prática
     }
+
+    // O método stopListener() que tinhas pode ser útil no futuro
+    // public void stopListener() { ... }
 
     @Override
     public void run () {
         System.out.println("[ClientListener] A escutar clientes no porto " + serverSocket.getLocalPort());
         try {
-            while (!isInterrupted()) {
+            while (!isInterrupted() && !serverSocket.isClosed()) { // Melhor condição de loop
                 // Fica bloqueado aqui até um cliente se ligar
                 Socket clientSocket = serverSocket.accept();
 
                 System.out.println("[ClientListener] Novo cliente ligado: " + clientSocket.getInetAddress());
 
-                // TODO: Lançar uma thread para tratar do cliente
-                // ClientHandler handler = new ClientHandler(clientSocket, dbManager);
-                // new Thread(handler).start();
+                // Lança uma thread para tratar do cliente
+                ClientHandler handler = new ClientHandler(clientSocket /*, dbManager */);
+                handler.start(); // Inicia a thread ClientHandler
             }
+        } catch (java.net.SocketException e) {
+            System.out.println("[ClientListener] Socket fechado, a parar."); // Normal quando o servidor fecha
         } catch (Exception e) {
-            if (!serverSocket.isClosed()) {
-                System.err.println("[ClientListener] Erro no listener de clientes: " + e.getMessage());
-            }
+            System.err.println("[ClientListener] Erro no listener de clientes: " + e.getMessage());
         } finally {
             System.out.println("[ClientListener] Serviço parado.");
         }

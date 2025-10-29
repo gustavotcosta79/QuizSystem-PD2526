@@ -8,9 +8,13 @@
 package pt.isec.pd.tp.g11.client.communication;
 
 import pt.isec.pd.tp.g11.common.enums.MessageType;
+import pt.isec.pd.tp.g11.common.messages.TCPMessage;
 import pt.isec.pd.tp.g11.common.messages.UDPMessage;
+import pt.isec.pd.tp.g11.common.model.User;
 import pt.isec.pd.tp.g11.common.utils.SerializationUtils;
 
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
@@ -30,9 +34,9 @@ public class ServerConnection {
     private int serverPort;
 
     // TODO: A ligação TCP principal e os ObjectStreams
-    // private Socket tcpSocket;
-    // private ObjectOutputStream out;
-    // private ObjectInputStream in;
+    private Socket tcpSocket;
+    private ObjectOutputStream out;
+    private ObjectInputStream in;
 
     public ServerConnection(String dirInfo) throws Exception {
         String[] parts = dirInfo.split(":");
@@ -86,24 +90,92 @@ public class ServerConnection {
         }
     }
 
-    /**
-     * Tenta estabelecer uma ligação TCP com o servidor
-     * (apenas para teste do "Esqueleto").
-     */
-    public void testTCPConnection() {
-        if (serverIp == null) {
-            System.out.println("Erro: Servidor ainda não foi encontrado. Tente a opção 1 primeiro.");
-            return;
+    public User login(String email, String password) {
+        // Se já tivermos uma ligação, tentar reutilizá-la?
+        // Por agora, vamos assumir que o login é a primeira ação TCP.
+        if (tcpSocket != null && !tcpSocket.isClosed()) {
+            System.err.println("[Comunicação] Já existe uma ligação TCP ativa.");
+            // Poderíamos tentar fazer logout primeiro, ou simplesmente falhar.
+            return null;
         }
 
-        System.out.println("[Comunicação] A ligar (TCP) a " + serverIp + ":" + serverPort + "...");
-        try (Socket testSocket = new Socket(serverIp, serverPort)) {
-            System.out.println("[Comunicação] LIGADO! Ligação TCP estabelecida.");
-            System.out.println("(O cliente fechou a ligação, como esperado no teste.)");
+        if (serverIp == null) {
+            System.err.println("Erro: Servidor principal não encontrado via UDP.");
+            return null;
+        }
+
+        try {
+            // 1. Estabelecer a ligação TCP permanente (NÃO usar try-with-resources)
+            System.out.println("[Comunicação] A ligar (TCP) a " + serverIp + ":" + serverPort + "...");
+            this.tcpSocket = new Socket(serverIp, serverPort);
+            // IMPORTANTE: Criar o Output stream PRIMEIRO
+            this.out = new ObjectOutputStream(tcpSocket.getOutputStream());
+            this.in = new ObjectInputStream(tcpSocket.getInputStream());
+            System.out.println("[Comunicação] Ligação TCP estabelecida.");
+
+            // 2. Criar e enviar a mensagem de Login
+            String[] credentials = {email, password};
+            TCPMessage loginRequest = new TCPMessage(MessageType.LOGIN_REQUEST, credentials);
+            System.out.println("[Comunicação] A enviar pedido de LOGIN...");
+            out.writeObject(loginRequest);
+            out.flush(); // Garante que a mensagem é enviada
+
+            // 3. Esperar pela resposta do servidor (LOGIN_SUCCESS ou LOGIN_FAILED)
+            System.out.println("[Comunicação] A aguardar resposta do servidor...");
+            Object responseObj = in.readObject(); // Bloqueia até receber resposta
+
+            if (!(responseObj instanceof TCPMessage)) {
+                System.err.println("[Comunicação] Resposta inválida do servidor.");
+                closeConnection(); // Fechar ligação
+                return null;
+            }
+
+            TCPMessage response = (TCPMessage) responseObj;
+
+            // 4. Processar a resposta
+            if (response.getType() == MessageType.LOGIN_SUCCESS) {
+                if (response.getPayload() instanceof User) {
+                    User user = (User) response.getPayload();
+                    System.out.println("[Comunicação] Login bem-sucedido para: " + user.getEmail());
+
+                    // TODO: Iniciar a thread de escuta de notificações assíncronas
+                    // this.notificationListener = new NotificationListener(in);
+                    // this.notificationListener.start();
+
+                    return user; // SUCESSO! Devolve o objeto User
+                } else {
+                    System.err.println("[Comunicação] Payload inválido para LOGIN_SUCCESS.");
+                    closeConnection();
+                    return null;
+                }
+            } else {
+                // Login falhou (ex: LOGIN_FAILED ou outro erro)
+                String errorMsg = (response.getPayload() instanceof String) ? (String) response.getPayload() : "Erro desconhecido.";
+                System.err.println("[Comunicação] Login falhou: " + errorMsg);
+                closeConnection(); // Fechar ligação em caso de falha
+                return null;
+            }
+
         } catch (Exception e) {
-            System.err.println("[Comunicação] Falha ao ligar ao servidor: " + e.getMessage());
+            System.err.println("[Comunicação] Erro durante o login: " + e.getMessage());
+            closeConnection(); // Garante que fecha a ligação em caso de erro
+            return null;
         }
     }
+
+    /** Fecha a ligação TCP e os streams */
+    public void closeConnection() {
+        // TODO: Enviar mensagem de LOGOUT para o servidor antes de fechar?
+        try {
+            if (out != null) out.close();
+            if (in != null) in.close();
+            if (tcpSocket != null && !tcpSocket.isClosed()) tcpSocket.close();
+        } catch (Exception e) { /* ignorar */ }
+        System.out.println("[Comunicação] Ligação TCP fechada.");
+    }
+
+
+
 
     // TODO: Métodos futuros que a Vista irá chamar
     /*
