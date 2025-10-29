@@ -43,6 +43,9 @@ public class ServerInfo {
         return lastHeartbeat;
     }
 
+    public int getDbPort () {
+        return dbPort;
+    }
     // Usado para verificar se um servidor que envia heartbeat já está na lista
     @Override
     public boolean equals(Object obj) {

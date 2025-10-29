@@ -1,12 +1,12 @@
 /*
  * Ficheiro: HeartbeatService.java
- * Objetivo: Thread responsável por enviar heartbeats periódicos (a cada 5s)
- * para o Serviço de Diretoria, anunciando os portos TCP deste servidor.
+ * VERSÃO ATUALIZADA - Compatível com ServerConfig (3 argumentos)
  */
 package pt.isec.pd.tp.g11.server.net;
 
 import pt.isec.pd.tp.g11.common.enums.MessageType;
 import pt.isec.pd.tp.g11.common.messages.UDPMessage;
+import pt.isec.pd.tp.g11.server.ServerConfig; // Importar a sua nova classe
 import pt.isec.pd.tp.g11.common.utils.SerializationUtils;
 
 import java.net.DatagramPacket;
@@ -21,15 +21,24 @@ public class HeartbeatService extends Thread {
     private final int directoryPort;
     private final int serverClientPort;
     private final int serverDbPort;
+    private final InetAddress multicastAddress;
+    private final int multicastPort = 3030; // Fixo, conforme PDF
+
+    // TODO: private final DatabaseManager dbManager;
 
     private boolean isRunning = true;
 
-    public HeartbeatService(InetAddress dirAddress, int dirPort, int serverClientPort, int serverDbPort) {
-        this.directoryAddress = dirAddress;
-        this.directoryPort = dirPort;
+    // Construtor atualizado para receber a Config
+    public HeartbeatService(ServerConfig config, int serverClientPort, int serverDbPort /*, DatabaseManager dbManager */) {
+        this.directoryAddress = config.getDirectoryAddress();
+        this.directoryPort = config.getDirectoryPort();
+        this.multicastAddress = config.getMulticastAddress();
         this.serverClientPort = serverClientPort;
         this.serverDbPort = serverDbPort;
-        setDaemon(true); // Para que esta thread não impeça o servidor de fechar
+        // this.dbManager = dbManager;
+
+        setDaemon(true);
+        setName("HeartbeatService");
     }
 
     public void stopHeartbeat() {
@@ -39,46 +48,60 @@ public class HeartbeatService extends Thread {
 
     @Override
     public void run() {
-        // Usamos try-with-resources para garantir que o socket UDP fecha
-        try (DatagramSocket socket = new DatagramSocket()) { // Porta automática
+        try (DatagramSocket socket = new DatagramSocket()) {
 
             while (isRunning) {
                 try {
-                    // 1. Criar o OBJETO da mensagem
-                    // Usamos HEARTBEAT para registo e atualização
-                    UDPMessage msg = new UDPMessage(MessageType.SERVER_HEARTBEAT,
-                            String.valueOf(serverClientPort),
-                            String.valueOf(serverDbPort)
-                    );
+                    // TODO: Obter a versão da BD
+                    // int dbVersion = dbManager.getDbVersion();
+                    int dbVersion = 0; // Placeholder
 
-                    // 2. SERIALIZAR o objeto (com Utils)
+                    // 2. Criar o payload (consistente com o ServerListManager)
+                    String[] payload = {
+                            String.valueOf(serverClientPort),
+                            String.valueOf(serverDbPort),
+                            String.valueOf(dbVersion) // Adiciona a versão da BD
+                    };
+                    UDPMessage msg = new UDPMessage(MessageType.SERVER_HEARTBEAT, payload);
+
                     byte[] data = SerializationUtils.serialize(msg);
 
-                    // 3. Enviar o PACOTE de bytes
-                    DatagramPacket packet = new DatagramPacket(data, data.length, directoryAddress, directoryPort);
-                    socket.send(packet);
+                    // 4. Enviar pacote UNICAST (para o DirectoryService)
+                    //
+                    DatagramPacket unicastPacket = new DatagramPacket(data, data.length, directoryAddress, directoryPort);
+                    socket.send(unicastPacket);
 
-                    System.out.println("[Heartbeat] Anunciado ao " + directoryAddress.getHostAddress() + ":" + directoryPort);
+                    // 5. Enviar pacote MULTICAST (para os outros Servidores)
+                    //
+                    DatagramPacket multicastPacket = new DatagramPacket(data, data.length, multicastAddress, multicastPort);
+                    socket.send(multicastPacket);
 
-                    // 4. Esperar pela resposta (opcional, mas bom para debug)
-                    // O teu ServerListManager responde com o servidor principal
+                    // 6. Esperar pela resposta (APENAS do diretório)
+                    //
                     byte[] buffer = new byte[4096];
                     DatagramPacket responsePacket = new DatagramPacket(buffer, buffer.length);
-                    socket.receive(responsePacket); // Espera pela resposta
+                    socket.setSoTimeout(2000);
 
-                    // TODO: Processar a resposta (saber quem é o principal)
+                    socket.receive(responsePacket);
 
-                    // 5. Dormir 5 segundos
+                    UDPMessage response = (UDPMessage) SerializationUtils.deserialize(responsePacket.getData());
+                    // TODO: Processar a resposta do diretório (saber quem é o principal)
+                    // String[] primaryInfo = response.getPayload();
+                    // System.out.println("[Heartbeat] Resposta do Dir: O primário é " + primaryInfo[0]);
+
+                    // 7. Dormir 5 segundos
                     Thread.sleep(HEARTBEAT_INTERVAL_MS);
 
                 } catch (InterruptedException e) {
-                    if (isRunning) System.err.println("Heartbeat interrompido.");
+                    if (isRunning) System.err.println("[Heartbeat] Interrompido.");
+                } catch (java.net.SocketTimeoutException e) {
+                    System.err.println("[Heartbeat] Diretório não respondeu ao heartbeat.");
                 } catch (Exception e) {
-                    System.err.println("Erro no HeartbeatService: " + e.getMessage());
+                    System.err.println("[HeartbeatService] Erro no loop: " + e.getMessage());
                 }
             }
         } catch (Exception e) {
-            System.err.println("Erro fatal no HeartbeatService (não conseguiu abrir socket): " + e.getMessage());
+            System.err.println("[HeartbeatService] Erro fatal (não conseguiu abrir socket): " + e.getMessage());
         }
         System.out.println("[Heartbeat] Serviço parado.");
     }
