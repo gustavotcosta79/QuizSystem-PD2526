@@ -71,8 +71,11 @@ public class MainServer {
             }
 
             // 4. VERIFICAR SE SOMOS PRIMÁRIOS E SINCRONIZAR BD (A tua lógica está perfeita)
-            String myIp = InetAddress.getLocalHost().getHostAddress(); // Nota: Pode falhar em algumas configs de rede
-            if (primaryServerInfo[0].equals(myIp) && Integer.parseInt(primaryServerInfo[1]) == clientPort) {
+
+
+            String myIp = InetAddress.getLoopbackAddress().getHostAddress(); /// para testar localmente
+            //String myIp = InetAddress.getLocalHost().getHostAddress(); // Nota: Pode falhar em algumas configs de rede (Esta função não devolve 127.0.0.1; devolve o IP da tua rede (ex: 192.168.1.X). A tua verificação if ("127.0.0.1".equals("192.168.1.X") ...) falha, e o servidor pensa (erradamente) que é um BACKUP.
+            if (primaryServerInfo[0].equals(myIp) && Integer.parseInt(primaryServerInfo[1]) == dbPort) {
                 System.out.println("[MainServer] Este servidor é o PRIMÁRIO.");
                 // TODO: Iniciar a BD (e criar se não existir)
             } else {
