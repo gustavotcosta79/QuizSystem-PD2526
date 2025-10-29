@@ -6,6 +6,7 @@ package pt.isec.pd.tp.g11.server; // Package da sua estrutura
 
 import pt.isec.pd.tp.g11.common.enums.MessageType;
 import pt.isec.pd.tp.g11.common.messages.UDPMessage;
+import pt.isec.pd.tp.g11.server.net.ClientListener;
 import pt.isec.pd.tp.g11.server.net.HeartbeatService; // Package da sua estrutura
 import pt.isec.pd.tp.g11.common.utils.SerializationUtils;
 
@@ -90,9 +91,9 @@ public class MainServer {
             // 6. Iniciar a thread que escuta clientes
             // ** CORREÇÃO: Passar o socket que continua aberto **
             ///
-            //System.out.println("[MainServer] A iniciar ClientListener...");
-            //ClientListener clientListener = new ClientListener(clientSocket);
-            //clientListener.start(); // <-- Isto vai manter o servidor vivo
+            System.out.println("[MainServer] A iniciar ClientListener...");
+            ClientListener clientListener = new ClientListener(clientSocket);
+            clientListener.start(); // <-- Isto vai manter o servidor vivo
             ///
             // 7. TODO: Iniciar a thread que escuta pedidos de BD
             // DbSyncListener dbSyncListener = new DbSyncListener(dbSyncSocket);
