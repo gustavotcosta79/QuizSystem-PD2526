@@ -1,16 +1,18 @@
 package pt.isec.pd.tp.g11.server.net;
 
+import pt.isec.pd.tp.g11.server.db.DatabaseManager;
+
 import java.net.ServerSocket;
 import java.net.Socket;
 
 public class ClientListener extends Thread {
 
     private final ServerSocket serverSocket;
-    // private final DatabaseManager dbManager; // Vais precisar de passar isto
+    private final DatabaseManager dbManager; // Vais precisar de passar isto
 
-    public ClientListener (ServerSocket serverSocket /*,DatabaseManager dbManager*/){
+    public ClientListener (ServerSocket serverSocket ,DatabaseManager dbManager){
         this.serverSocket = serverSocket;
-        // this.dbManager = dbManager;
+         this.dbManager = dbManager;
         setName("ClientListener"); // Boa prática
     }
 
@@ -28,7 +30,7 @@ public class ClientListener extends Thread {
                 System.out.println("[ClientListener] Novo cliente ligado: " + clientSocket.getInetAddress());
 
                 // Lança uma thread para tratar do cliente
-                ClientHandler handler = new ClientHandler(clientSocket /*, dbManager */);
+                ClientHandler handler = new ClientHandler(clientSocket ,dbManager );
                 handler.start(); // Inicia a thread ClientHandler
             }
         } catch (java.net.SocketException e) {

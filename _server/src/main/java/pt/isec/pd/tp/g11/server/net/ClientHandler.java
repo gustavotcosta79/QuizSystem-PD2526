@@ -10,7 +10,8 @@ import pt.isec.pd.tp.g11.common.enums.MessageType;
 import pt.isec.pd.tp.g11.common.messages.TCPMessage;
 import pt.isec.pd.tp.g11.common.model.Docente; // Importar Doc// ente
 import pt.isec.pd.tp.g11.common.model.User;
-// import pt.isec.pd.tp.g11.server.db.DatabaseManager; // Vais precisar disto
+import pt.isec.pd.tp.g11.server.db.DatabaseManager;
+import pt.isec.pd.tp.g11.server.db.DatabaseManager; // Vais precisar disto
 
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
@@ -20,14 +21,14 @@ import java.net.SocketTimeoutException;
 public class ClientHandler extends Thread {
 
     private final Socket clientSocket;
-    // private final DatabaseManager dbManager; // O gestor da BD
+    private final DatabaseManager dbManager; // O gestor da BD
     private ObjectOutputStream out;
     private ObjectInputStream in;
     private User authenticatedUser = null;
 
-    public ClientHandler(Socket socket /*, DatabaseManager dbManager */) {
+    public ClientHandler(Socket socket, DatabaseManager dbManager ) {
         this.clientSocket = socket;
-        // this.dbManager = dbManager;
+        this.dbManager = dbManager;
         setName("ClientHandler-" + socket.getInetAddress());
     }
 
@@ -112,11 +113,17 @@ public class ClientHandler extends Thread {
         // User user = dbManager.checkLogin(credentials[0], credentials[1]);
 
         // --- Exemplo Falso (para testar) ---
-        User user = null;
-        if (credentials[0].equals("docente@isec.pt") && credentials[1].equals("1234")) {
-            user = new Docente(1, "Docente Teste", "docente@isec.pt"); // Usar a classe Docente
-        }
+            //User user = null;
+            //if (credentials[0].equals("docente@isec.pt") && credentials[1].equals("1234")) {
+            //    user = new Docente(1, "Docente Teste", "docente@isec.pt"); // Usar a classe Docente
+            //}
         // --- Fim do Exemplo Falso ---
+
+        // --- ALTERAÇÃO PRINCIPAL: USAR O DBMANAGER ---
+        System.out.println("[ClientHandler] A verificar login para: " + credentials[0]);
+        User user = dbManager.checkLogin(credentials[0], credentials[1]); // <-- A chamada real!
+        // --- FIM DA ALTERAÇÃO ---
+
 
         if (user != null) {
             this.authenticatedUser = user; // Guarda o utilizador autenticado
