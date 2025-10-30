@@ -1,6 +1,7 @@
 package pt.isec.pd.tp.g11.client.view;
 
 import pt.isec.pd.tp.g11.client.communication.ServerConnection;
+import pt.isec.pd.tp.g11.common.model.Estudante;
 import pt.isec.pd.tp.g11.common.model.User; // Importar User
 import java.util.Scanner;
 
@@ -64,7 +65,8 @@ public class ConsoleUI implements Runnable {
                     }
                     break;
                 case 2:
-                    System.out.println("Registar Estudante (ainda não implementado).");
+                    System.out.println("Registar Estudante.");
+                    handleRegisterEstudante();
                     break;
                 case 3:
                     System.out.println("Registar Docente (ainda não implementado).");
@@ -99,6 +101,53 @@ public class ConsoleUI implements Runnable {
         } else {
             System.out.println("Login falhou. Verifique as credenciais ou o servidor.");
             this.loggedInUser = null; // Garante que não fica logado
+        }
+    }
+
+    /**
+     * Pede os dados ao utilizador para registar um novo estudante
+     * e chama o componente de comunicação.
+     */
+    private void handleRegisterEstudante() {
+        System.out.println("\n--- Registo de Novo Estudante ---");
+        try {
+            System.out.print("Nome Completo: ");
+            String nome = scanner.nextLine();
+
+            System.out.print("Email: ");
+            String email = scanner.nextLine();
+
+            System.out.print("Número de Estudante: ");
+            String numero = scanner.nextLine();
+
+            System.out.print("Password: ");
+            String pass1 = scanner.nextLine();
+
+            System.out.print("Confirme a Password: ");
+            String pass2 = scanner.nextLine();
+
+            // Validação simples na Vista
+            if (!pass1.equals(pass2)) {
+                System.err.println("As passwords não coincidem. Tente novamente.");
+                return;
+            }
+            if (nome.isEmpty() || email.isEmpty() || numero.isEmpty() || pass1.isEmpty()) {
+                System.err.println("Todos os campos são obrigatórios. Tente novamente.");
+                return;
+            }
+
+            // Criar o objeto Estudante (o ID será 0, a BD trata disso)
+            Estudante novoEstudante = new Estudante(0, nome, email, numero);
+
+            // Chamar o componente de comunicação
+            System.out.println("A tentar registar. Por favor, aguarde...");
+            if (connection.registerEstudante(novoEstudante, pass1)) {
+                System.out.println("Registo efetuado com sucesso! Já pode fazer login.");
+            } else {
+                System.out.println("Falha no registo. O email ou número de estudante podem já estar em uso.");
+            }
+        } catch (Exception e) {
+            System.err.println("Ocorreu um erro inesperado durante o registo.");
         }
     }
 

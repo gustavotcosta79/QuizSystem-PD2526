@@ -9,9 +9,11 @@ package pt.isec.pd.tp.g11.server.net;
 import pt.isec.pd.tp.g11.common.enums.MessageType;
 import pt.isec.pd.tp.g11.common.messages.TCPMessage;
 import pt.isec.pd.tp.g11.common.model.Docente; // Importar Doc// ente
+import pt.isec.pd.tp.g11.common.model.Estudante;
 import pt.isec.pd.tp.g11.common.model.User;
 import pt.isec.pd.tp.g11.server.db.DatabaseManager;
 import pt.isec.pd.tp.g11.server.db.DatabaseManager; // Vais precisar disto
+import pt.isec.pd.tp.g11.server.utils.SecurityUtils;
 
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
@@ -47,15 +49,14 @@ public class ClientHandler extends Thread {
 
             // 4. Processar o primeiro pedido
             if (request.getType() == MessageType.LOGIN_REQUEST) {
-                handleLogin(request); // Tenta autenticar
+                handleLogin(request);
             } else if (request.getType() == MessageType.REGISTER_ESTUDANTE) {
-                // TODO: handleRegisterEstudante(request);
-                out.writeObject(new TCPMessage(MessageType.REGISTER_FAILED, "Registo ainda não implementado."));
+                // Descomentar e implementar
+                handleRegisterEstudante(request);
             } else if (request.getType() == MessageType.REGISTER_DOCENTE) {
                 // TODO: handleRegisterDocente(request);
-                out.writeObject(new TCPMessage(MessageType.REGISTER_FAILED, "Registo ainda não implementado."));
+                out.writeObject(new TCPMessage(MessageType.REGISTER_FAILED, "Registo de Docente ainda não implementado."));
             } else {
-                // Mensagem inicial inválida
                 out.writeObject(new TCPMessage(MessageType.LOGIN_FAILED, "Protocolo inválido. Esperado LOGIN ou REGISTER."));
             }
 
@@ -134,6 +135,45 @@ public class ClientHandler extends Thread {
         }
     }
 
-    // TODO: Implementar handleRegisterEstudante e handleRegisterDocente
+
+    /**
+     * Trata de um pedido de registo de um novo estudante.
+     */
+    private void handleRegisterEstudante(TCPMessage request) throws Exception {
+        // O payload esperado é: Object[] { Estudante, String password }
+        if (!(request.getPayload() instanceof Object[])) {
+            out.writeObject(new TCPMessage(MessageType.REGISTER_FAILED, "Payload inválido."));
+            return;
+        }
+
+        Object[] payload = (Object[]) request.getPayload();
+
+        if (payload.length != 2 || !(payload[0] instanceof Estudante) || !(payload[1] instanceof String)) {
+            out.writeObject(new TCPMessage(MessageType.REGISTER_FAILED, "Payload mal formatado para Registo de Estudante."));
+            return;
+        }
+
+        Estudante estudante = (Estudante) payload[0];
+        String plainPassword = (String) payload[1];
+
+        // 1. Fazer o Hash da password
+        String passwordHash = SecurityUtils.hashPassword(plainPassword);
+
+        // 2. Tentar registar na Base de Dados
+        if (dbManager.registerEstudante(estudante, passwordHash)) {
+            // 3. Enviar SUCESSO
+            out.writeObject(new TCPMessage(MessageType.REGISTER_SUCCESS));
+            System.out.println("[ClientHandler] Novo estudante registado: " + estudante.getEmail());
+            // Nota: Não fazemos login automático, o utilizador terá de fazer login
+        } else {
+            // 4. Enviar FALHA (Email ou Número já existem)
+            out.writeObject(new TCPMessage(MessageType.REGISTER_FAILED, "Email ou Número de Estudante já existem."));
+        }
+
+        // Se o registo falhar ou for bem-sucedido, o 'authenticatedUser' continua 'null'.
+        // O 'run()' vai ver que 'authenticatedUser == null' e vai fechar a ligação,
+        // o que está correto para um pedido de registo que não faz login automático.
+    }
+    // TODO: Implementar  e handleRegisterDocente
     // TODO: Implementar handleAuthenticatedRequest (o switch principal para utilizadores logados)
 }

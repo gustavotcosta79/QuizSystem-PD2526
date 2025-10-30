@@ -12,6 +12,9 @@ import pt.isec.pd.tp.g11.common.messages.TCPMessage;
 import pt.isec.pd.tp.g11.common.messages.UDPMessage;
 import pt.isec.pd.tp.g11.common.model.User;
 import pt.isec.pd.tp.g11.common.utils.SerializationUtils;
+import pt.isec.pd.tp.g11.common.model.Estudante;
+import pt.isec.pd.tp.g11.common.model.Docente;
+
 
 import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
@@ -162,6 +165,58 @@ public class ServerConnection {
             return null;
         }
     }
+
+
+
+    /**
+     * Tenta registar um novo estudante no servidor.
+     * @param estudante O objeto Estudante com os dados (ID pode ser 0)
+     * @param password A password em texto simples
+     * @return true se o registo for bem-sucedido, false caso contrário
+     */
+    public boolean registerEstudante(Estudante estudante, String password) {
+        if (serverIp == null) {
+            System.err.println("Erro: Servidor principal não encontrado.");
+            return false;
+        }
+
+        // O registo usa uma ligação TCP temporária.
+        // Não interfere com a ligação principal (this.tcpSocket).
+        try (Socket tempSocket = new Socket(serverIp, serverPort);
+             ObjectOutputStream tempOut = new ObjectOutputStream(tempSocket.getOutputStream());
+             ObjectInputStream tempIn = new ObjectInputStream(tempSocket.getInputStream()))
+        {
+            System.out.println("[Comunicação] A enviar pedido de REGISTAR_ESTUDANTE...");
+
+            // 1. Preparar o payload: um array de Objeto
+            // { Objeto Estudante, String password }
+            Object[] payload = { estudante, password };
+            TCPMessage registerRequest = new TCPMessage(MessageType.REGISTER_ESTUDANTE, payload);
+
+            // 2. Enviar pedido
+            tempOut.writeObject(registerRequest);
+            tempOut.flush();
+
+            // 3. Esperar pela resposta (REGISTER_SUCCESS ou REGISTER_FAILED)
+            TCPMessage response = (TCPMessage) tempIn.readObject();
+
+            // 4. Devolver true se a resposta for SUCESSO
+            if (response.getType() == MessageType.REGISTER_SUCCESS) {
+                System.out.println("[Comunicação] Registo bem-sucedido.");
+                return true;
+            } else {
+                // Imprime a mensagem de erro vinda do servidor
+                String errorMsg = (response.getPayload() instanceof String) ? (String) response.getPayload() : "Erro desconhecido.";
+                System.err.println("[Comunicação] Registo falhou: " + errorMsg);
+                return false;
+            }
+
+        } catch (Exception e) {
+            System.err.println("[Comunicação] Erro crítico durante o registo: " + e.getMessage());
+            return false;
+        }
+    }
+
 
     /** Fecha a ligação TCP e os streams */
     public void closeConnection() {
