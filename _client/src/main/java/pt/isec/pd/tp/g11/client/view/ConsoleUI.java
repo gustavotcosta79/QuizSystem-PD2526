@@ -305,7 +305,7 @@ public class ConsoleUI implements Runnable {
             System.out.println("A enviar pergunta para o servidor...");
 
             // TODO: Criar o método 'createQuestion' no ServerConnection
-             String accessCode = connection.createQuestion(newQuestion);
+            String accessCode = connection.createQuestion(newQuestion);
             String accessCode = "ABC123_TESTE"; // Placeholder
 
             if (accessCode != null) {
