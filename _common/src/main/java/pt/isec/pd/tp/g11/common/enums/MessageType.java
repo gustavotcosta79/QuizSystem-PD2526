@@ -24,6 +24,17 @@ public enum MessageType implements Serializable {
     CREATE_QUESTION_SUCCESS, // Servidor -> Cliente (Payload: String accessCode)
     CREATE_QUESTION_FAILED,  // Servidor -> Cliente (Payload: String "Erro...")
 
+    // --- NOVOS TIPOS PARA RESPONDER (ESTUDANTE) ---
+    GET_QUESTION_BY_CODE,      // Cliente -> Servidor (Payload: String codigoAcesso)
+    GET_QUESTION_SUCCESS,    // Servidor -> Cliente (Payload: Question)
+    GET_QUESTION_FAILED,     // Servidor -> Cliente (Payload: String "Erro...")
+
+    SUBMIT_ANSWER,          // Cliente -> Servidor (Payload: AnswerPayload)
+    SUBMIT_ANSWER_SUCCESS,  // Servidor -> Cliente (Sem payload)
+    SUBMIT_ANSWER_FAILED,   // Servidor -> Cliente (Payload: String "Erro...")
+
+
+
     // --- Tipos Futuros para TCP (Perguntas, etc.) ---
     // CREATE_QUESTION, GET_QUESTIONS, SUBMIT_ANSWER, etc.
 

@@ -488,6 +488,49 @@ public class DatabaseManager {
             } catch (SQLException e) { /* ignorar */ }
         }
     }
+
+
+    /**
+     * Insere a resposta de um estudante a uma pergunta.
+     * Falha se o estudante já tiver respondido a essa pergunta.
+     *
+     * @param idEstudante ID do estudante (do authenticatedUser)
+     * @param idPergunta ID da pergunta
+     * @param respostaLetra A letra ('a', 'b', etc.) que o estudante submeteu
+     * @return true se foi bem-sucedido, false caso contrário
+     */
+    public boolean submitAnswer(int idEstudante, int idPergunta, String respostaLetra) {
+        if (connection == null) return false;
+
+        // A tabela 'Resposta' foi definida com UNIQUE(idEstudante, idPergunta)
+        //
+        String sql = "INSERT INTO Resposta(idEstudante, idPergunta, respostaSubmetida) VALUES (?, ?, ?)";
+
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+            pstmt.setInt(1, idEstudante);
+            pstmt.setInt(2, idPergunta);
+            pstmt.setString(3, respostaLetra);
+            pstmt.executeUpdate();
+
+            System.out.println("[DBManager] Resposta do Estudante " + idEstudante + " à Pergunta " + idPergunta + " registada.");
+
+            // TODO: Aqui é um ponto crítico onde tens de enviar um heartbeat
+            // com a query SQL para os backups se manterem sincronizados.
+            //
+
+            return true;
+
+        } catch (SQLException e) {
+            // "SQLITE_CONSTRAINT_UNIQUE" (código 19) indica falha na restrição UNIQUE
+            if (e.getErrorCode() == 19) {
+                System.err.println("[DBManager] Estudante " + idEstudante + " já respondeu à pergunta " + idPergunta + ".");
+            } else {
+                System.err.println("[DBManager] Erro ao submeter resposta: " + e.getMessage());
+            }
+            return false; // Falha
+        }
+    }
+
 }
 
     // --- Métodos Futuros ---

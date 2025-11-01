@@ -10,11 +10,8 @@ package pt.isec.pd.tp.g11.client.communication;
 import pt.isec.pd.tp.g11.common.enums.MessageType;
 import pt.isec.pd.tp.g11.common.messages.TCPMessage;
 import pt.isec.pd.tp.g11.common.messages.UDPMessage;
-import pt.isec.pd.tp.g11.common.model.Question;
-import pt.isec.pd.tp.g11.common.model.User;
+import pt.isec.pd.tp.g11.common.model.*;
 import pt.isec.pd.tp.g11.common.utils.SerializationUtils;
-import pt.isec.pd.tp.g11.common.model.Estudante;
-import pt.isec.pd.tp.g11.common.model.Docente;
 
 
 import java.io.ObjectInputStream;
@@ -323,6 +320,39 @@ public class ServerConnection {
         }
         return null; // Falha
     }
+
+
+
+
+    /**
+     * Submete a resposta de um estudante a uma pergunta.
+     */
+    public boolean submitAnswer(int idPergunta, String respostaLetra) {
+        if (tcpSocket == null || !tcpSocket.isConnected()) return false;
+
+        try {
+            // --- ALTERAÇÃO AQUI ---
+            // 1. Criar o objeto de payload
+            AnswerPayload payload = new AnswerPayload(idPergunta, respostaLetra);
+            TCPMessage request = new TCPMessage(MessageType.SUBMIT_ANSWER, payload);
+            // --- FIM DA ALTERAÇÃO ---
+
+            // 2. Enviar pedido
+            out.writeObject(request);
+            out.flush();
+
+            // 3. Esperar resposta
+            TCPMessage response = (TCPMessage) in.readObject();
+
+            // ... (resto do método igual)
+            return (response.getType() == MessageType.SUBMIT_ANSWER_SUCCESS);
+
+        } catch (Exception e) {
+            System.err.println("[Comunicação] Erro ao submeter resposta: " + e.getMessage());
+            return false;
+        }
+    }
+
 
 
 

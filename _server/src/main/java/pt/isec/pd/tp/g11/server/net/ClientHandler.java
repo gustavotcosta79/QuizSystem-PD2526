@@ -8,10 +8,7 @@
 
     import pt.isec.pd.tp.g11.common.enums.MessageType;
     import pt.isec.pd.tp.g11.common.messages.TCPMessage;
-    import pt.isec.pd.tp.g11.common.model.Docente; // Importar Doc// ente
-    import pt.isec.pd.tp.g11.common.model.Estudante;
-    import pt.isec.pd.tp.g11.common.model.Question;
-    import pt.isec.pd.tp.g11.common.model.User;
+    import pt.isec.pd.tp.g11.common.model.*;
     import pt.isec.pd.tp.g11.server.db.DatabaseManager;
     import pt.isec.pd.tp.g11.server.db.DatabaseManager; // Vais precisar disto
     import pt.isec.pd.tp.g11.server.utils.SecurityUtils;
@@ -255,6 +252,34 @@
             } else {
                 System.err.println("[ClientHandler] Falha ao criar pergunta na BD.");
                 out.writeObject(new TCPMessage(MessageType.CREATE_QUESTION_FAILED, "Erro interno do servidor ao guardar a pergunta."));
+            }
+        }
+
+        /**
+         * Processa a submissão de uma resposta de um estudante.
+         */
+        private void handleSubmitAnswer(TCPMessage request) throws Exception {
+            // --- ALTERAÇÃO AQUI ---
+            // Payload esperado: AnswerPayload
+            if (!(request.getPayload() instanceof AnswerPayload)) {
+                out.writeObject(new TCPMessage(MessageType.SUBMIT_ANSWER_FAILED, "Payload inválido."));
+                return;
+            }
+
+            AnswerPayload payload = (AnswerPayload) request.getPayload();
+            // --- FIM DA ALTERAÇÃO ---
+
+            int idPergunta = payload.getIdPergunta();
+            String respostaLetra = payload.getRespostaLetra();
+
+            // Usar o ID do estudante autenticado na sessão
+            int idEstudante = authenticatedUser.getId();
+
+            if (dbManager.submitAnswer(idEstudante, idPergunta, respostaLetra)) {
+                out.writeObject(new TCPMessage(MessageType.SUBMIT_ANSWER_SUCCESS));
+                // TODO: Enviar heartbeat com query SQL para sincronizar backups
+            } else {
+                out.writeObject(new TCPMessage(MessageType.SUBMIT_ANSWER_FAILED, "Erro ao submeter: Já respondeu a esta pergunta?"));
             }
         }
 
