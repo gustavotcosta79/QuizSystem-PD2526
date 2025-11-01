@@ -10,6 +10,7 @@ package pt.isec.pd.tp.g11.client.communication;
 import pt.isec.pd.tp.g11.common.enums.MessageType;
 import pt.isec.pd.tp.g11.common.messages.TCPMessage;
 import pt.isec.pd.tp.g11.common.messages.UDPMessage;
+import pt.isec.pd.tp.g11.common.model.Question;
 import pt.isec.pd.tp.g11.common.model.User;
 import pt.isec.pd.tp.g11.common.utils.SerializationUtils;
 import pt.isec.pd.tp.g11.common.model.Estudante;
@@ -52,7 +53,7 @@ public class ServerConnection {
     /**
      * Contacta o Serviço de Diretoria (UDP) para descobrir
      * o IP/Porto do servidor principal.
-     * @return true se bem-sucedido, false se falhar.
+     * @return true se bem-sucedido, false se afalhar.
      */
     public boolean findServer() {
         System.out.println("[Comunicação] A contactar diretoria em " + dirAddress.getHostAddress() + ":" + dirPort);
@@ -218,6 +219,61 @@ public class ServerConnection {
     }
 
 
+    /**
+     * Tenta registar um novo docente no servidor.
+     * @param docente O objeto Docente com os dados (ID pode ser 0)
+     * @param password A password em texto simples
+     * @param codigoRegisto O código de registo de docente (texto simples)
+     * @return 0 (Sucesso), 1 (Falha - Código errado), 2 (Falha - Email/Erro)
+     */
+    public int registerDocente(Docente docente, String password, String codigoRegisto) {
+        if (serverIp == null) {
+            System.err.println("Erro: Servidor principal não encontrado.");
+            return 2;
+        }
+
+        // Registo usa uma ligação TCP temporária
+        try (Socket tempSocket = new Socket(serverIp, serverPort);
+             ObjectOutputStream tempOut = new ObjectOutputStream(tempSocket.getOutputStream());
+             ObjectInputStream tempIn = new ObjectInputStream(tempSocket.getInputStream()))
+        {
+            System.out.println("[Comunicação] A enviar pedido de REGISTAR_DOCENTE...");
+
+            // 1. Preparar o payload: um array de Objeto
+            // { Objeto Docente, String password, String codigoRegisto }
+            Object[] payload = { docente, password, codigoRegisto };
+            TCPMessage registerRequest = new TCPMessage(MessageType.REGISTER_DOCENTE, payload);
+
+            // 2. Enviar pedido
+            tempOut.writeObject(registerRequest);
+            tempOut.flush();
+
+            // 3. Esperar pela resposta (REGISTER_SUCCESS ou REGISTER_FAILED)
+            TCPMessage response = (TCPMessage) tempIn.readObject();
+
+            // 4. Devolver resultado
+            if (response.getType() == MessageType.REGISTER_SUCCESS) {
+                System.out.println("[Comunicação] Registo bem-sucedido.");
+                return 0; // Sucesso
+            } else {
+                // Imprime a mensagem de erro vinda do servidor
+                String errorMsg = (response.getPayload() instanceof String) ? (String) response.getPayload() : "Erro desconhecido.";
+                System.err.println("[Comunicação] Registo falhou: " + errorMsg);
+                // Mapear a mensagem de erro para o código de retorno
+                if (errorMsg.contains("Código")) {
+                    return 1; // Código errado
+                }
+                return 2; // Email duplicado ou outro erro
+            }
+
+        } catch (Exception e) {
+            System.err.println("[Comunicação] Erro crítico durante o registo: " + e.getMessage());
+            return 2;
+        }
+    }
+
+
+
     /** Fecha a ligação TCP e os streams */
     public void closeConnection() {
         // TODO: Enviar mensagem de LOGOUT para o servidor antes de fechar?
@@ -229,6 +285,44 @@ public class ServerConnection {
         System.out.println("[Comunicação] Ligação TCP fechada.");
     }
 
+    /**
+     * Envia um objeto Question (com as Options lá dentro) para o servidor.
+     * Usa a ligação TCP estabelecida no login.
+     * @param question O objeto Question preenchido pela ConsoleUI.
+     * @return O código de acesso (String) se for bem-sucedido, ou null se falhar.
+     */
+    public String createQuestion(Question question) {
+        if (tcpSocket == null || tcpSocket.isClosed() || out == null || in == null) {
+            System.err.println("[Comunicação] Não está ligado ao servidor (faça login primeiro).");
+            return null;
+        }
+
+        try {
+            // 1. Criar e enviar o pedido
+            System.out.println("[Comunicação] A enviar CREATE_QUESTION_REQUEST...");
+            TCPMessage request = new TCPMessage(MessageType.CREATE_QUESTION_REQUEST, question);
+            out.writeObject(request);
+            out.flush();
+
+            // 2. Esperar pela resposta do servidor
+            TCPMessage response = (TCPMessage) in.readObject();
+
+            // 3. Processar a resposta
+            if (response.getType() == MessageType.CREATE_QUESTION_SUCCESS) {
+                if (response.getPayload() instanceof String) {
+                    return (String) response.getPayload(); // Retorna o Código de Acesso
+                }
+            } else {
+                // Se falhou (CREATE_QUESTION_FAILED)
+                String errorMsg = (response.getPayload() instanceof String) ? (String) response.getPayload() : "Erro desconhecido.";
+                System.err.println("[Comunicação] Falha ao criar pergunta: " + errorMsg);
+            }
+        } catch (Exception e) {
+            System.err.println("[Comunicação] Erro crítico ao criar pergunta: " + e.getMessage());
+            // TODO: Tratar falha de ligação (pode ter de fechar e tentar reconectar)
+        }
+        return null; // Falha
+    }
 
 
 

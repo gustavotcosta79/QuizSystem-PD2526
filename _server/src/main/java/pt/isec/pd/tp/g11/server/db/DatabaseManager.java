@@ -6,10 +6,10 @@
  */
 package pt.isec.pd.tp.g11.server.db;
 
-import pt.isec.pd.tp.g11.common.model.Docente;
-import pt.isec.pd.tp.g11.common.model.Estudante;
-import pt.isec.pd.tp.g11.common.model.User;
+import pt.isec.pd.tp.g11.common.model.*;
 import pt.isec.pd.tp.g11.server.utils.SecurityUtils;
+import java.sql.Timestamp;
+import java.sql.ResultSet;
 
 import java.io.File;
 import java.sql.*;
@@ -96,7 +96,7 @@ public class DatabaseManager {
                     "  id INTEGER PRIMARY KEY AUTOINCREMENT," +
                     "  nome TEXT NOT NULL," +
                     "  email TEXT NOT NULL UNIQUE," + //
-                    "  password TEXT NOT NULL" +    // TODO: Usar HASH para passwords
+                    "  password TEXT NOT NULL" +    //
                     ");";
             stmt.execute(sqlDocente);
 
@@ -106,7 +106,7 @@ public class DatabaseManager {
                     "  numero TEXT NOT NULL UNIQUE," +  //
                     "  nome TEXT NOT NULL," +
                     "  email TEXT NOT NULL UNIQUE," +  //
-                    "  password TEXT NOT NULL" +   // TODO: Usar HASH para passwords
+                    "  password TEXT NOT NULL" +   //
                     ");";
             stmt.execute(sqlEstudante);
 
@@ -323,12 +323,174 @@ public class DatabaseManager {
         }
     }
 
-    // TODO: Implementar registerDocente(Docente docente, String passwordHash, String codigoRegisto)
-    // TODO: Implementar getDocenteRegisterHash() (para ler o hash da tabela Configuracao)
+    /**
+     * Obtém o hash do código de registo de docente guardado na tabela de Configuração.
+     * @return O hash do código, ou null se não for encontrado.
+     */
+    private String getDocenteRegisterHash() {
+        if (connection == null) return null;
+
+        String sql = "SELECT codigoRegistoDocente FROM Configuracao LIMIT 1";
+        try (Statement stmt = connection.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+
+            if (rs.next()) {
+                return rs.getString("codigoRegistoDocente");
+            }
+        } catch (SQLException e) {
+            System.err.println("[DBManager] Erro ao ler o código de registo de docente: " + e.getMessage());
+        }
+        return null;
+    }
+
+    /**
+     * Tenta registar um novo docente na base de dados.
+     * Falha se o código de registo estiver errado ou se o email já existir.
+     * @param docente O objeto Docente (sem ID)
+     * @param passwordHash O hash da password
+     * @param codigoRegistoFornecido O código de registo (em texto simples) fornecido
+     * @return 0 (Sucesso), 1 (Falha - Código errado), 2 (Falha - Email duplicado/Erro)
+     */
+    public int registerDocente(Docente docente, String passwordHash, String codigoRegistoFornecido) {
+        if (connection == null) return 2; // Erro genérico
+
+        // 1. Verificar o código de registo de docente
+        String hashCodigoCorreto = getDocenteRegisterHash();
+        if (hashCodigoCorreto == null) {
+            System.err.println("[DBManager] Falha no registo: Não foi possível obter o hash do código da BD.");
+            return 2;
+        }
+
+        // Usamos a mesma função 'checkPassword' para verificar o código
+        if (!SecurityUtils.checkPassword(codigoRegistoFornecido, hashCodigoCorreto)) {
+            System.err.println("[DBManager] Falha no registo de docente: Código de registo errado.");
+            return 1; // Código errado
+        }
+
+        // 2. Se o código estiver correto, inserir o docente
+        String sql = "INSERT INTO Docente(nome, email, password) VALUES (?, ?, ?)";
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+            pstmt.setString(1, docente.getNome());
+            pstmt.setString(2, docente.getEmail());
+            pstmt.setString(3, passwordHash);
+            pstmt.executeUpdate();
+
+            System.out.println("[DBManager] Novo docente registado: " + docente.getEmail());
+            return 0; // Sucesso
+
+        } catch (SQLException e) {
+            // "SQLITE_CONSTRAINT_UNIQUE" (código 19) indica email duplicado
+            if (e.getErrorCode() == 19) {
+                System.err.println("[DBManager] Falha no registo de docente: Email já existe. " + docente.getEmail());
+            } else {
+                System.err.println("[DBManager] Erro ao registar docente: " + e.getMessage());
+            }
+            return 2; // Email duplicado ou outro erro de BD
+        }
+    }
+
+    // ... (depois do teu método registerDocente)
+
+    /**
+     * Gera um código de acesso aleatório e único.
+     * (Podes tornar esta lógica mais robusta mais tarde)
+     * @return Um código de 6 caracteres alfanuméricos.
+     */
+    private String generateAccessCode() {
+        // TODO: Verificar se o código já existe na BD
+        String chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+        StringBuilder code = new StringBuilder();
+        java.util.Random rnd = new java.util.Random();
+        while (code.length() < 6) {
+            int index = (int) (rnd.nextFloat() * chars.length());
+            code.append(chars.charAt(index));
+        }
+        return code.toString();
+    }
+
+    /**
+     * Insere uma nova pergunta e as suas opções na BD.
+     * Usa uma transação para garantir que ou tudo ou nada é inserido.
+     *
+     * @param question O objeto Pergunta (com a lista de Opções)
+     * @param idDocente O ID do docente autenticado
+     * @return O código de acesso gerado, ou null se falhar.
+     */
+    public String createQuestion(Question question, int idDocente) {
+        if (connection == null) return null;
+
+        String sqlInsertQuestion = "INSERT INTO Pergunta(idDocente, codigoAcesso, enunciado, dataHoraInicio, dataHoraFim, respostaCerta) " +
+                "VALUES (?, ?, ?, ?, ?, ?)";
+        String sqlInsertOption = "INSERT INTO Opcao(idPergunta, letra, textoOpcao) VALUES (?, ?, ?)";
+
+        String accessCode = generateAccessCode();
+
+        try {
+            // --- Iniciar Transação ---
+            connection.setAutoCommit(false);
+
+            int idPergunta; // O ID da pergunta que vamos inserir
+
+            // 1. Inserir a Pergunta
+            try (PreparedStatement pstmtQuestion = connection.prepareStatement(sqlInsertQuestion, Statement.RETURN_GENERATED_KEYS)) {
+                pstmtQuestion.setInt(1, idDocente);
+                pstmtQuestion.setString(2, accessCode);
+                pstmtQuestion.setString(3, question.getEnunciado());
+                // Converter LocalDateTime para Timestamp SQL
+                pstmtQuestion.setTimestamp(4, Timestamp.valueOf(question.getBeginDateHour()));
+                pstmtQuestion.setTimestamp(5, Timestamp.valueOf(question.getEndDateHour()));
+                pstmtQuestion.setString(6, question.getCorrectAnswer());
+
+                pstmtQuestion.executeUpdate();
+
+                // Obter o ID da pergunta que acabámos de inserir
+                try (ResultSet generatedKeys = pstmtQuestion.getGeneratedKeys()) {
+                    if (generatedKeys.next()) {
+                        idPergunta = generatedKeys.getInt(1);
+                    } else {
+                        throw new SQLException("Falha ao obter ID da pergunta, nenhum ID foi gerado.");
+                    }
+                }
+            }
+
+            // 2. Inserir as Opções
+            try (PreparedStatement pstmtOption = connection.prepareStatement(sqlInsertOption)) {
+                for (Option option : question.getOptions()) {
+                    pstmtOption.setInt(1, idPergunta);
+                    pstmtOption.setString(2, option.getLetter());
+                    pstmtOption.setString(3, option.getTextOption());
+                    pstmtOption.addBatch(); // Adicionar à "fila" de inserts
+                }
+                pstmtOption.executeBatch(); // Executar todos os inserts de opções de uma vez
+            }
+
+            // 3. Se tudo correu bem, confirmar a transação
+            connection.commit();
+
+            // TODO: Enviar um heartbeat com SQL (aqui!)
+            //
+
+            return accessCode;
+
+        } catch (SQLException e) {
+            System.err.println("[DBManager] Erro ao criar pergunta. A fazer rollback. " + e.getMessage());
+            // 4. Se algo falhou, reverter tudo
+            try {
+                connection.rollback();
+            } catch (SQLException ex) {
+                System.err.println("[DBManager] Erro crítico ao fazer rollback: " + ex.getMessage());
+            }
+            return null; // Falha
+        } finally {
+            // Garantir que voltamos ao modo normal
+            try {
+                connection.setAutoCommit(true);
+            } catch (SQLException e) { /* ignorar */ }
+        }
+    }
+}
 
     // --- Métodos Futuros ---
     // public int getDbVersion() { ... }
     // public void incrementDbVersion() { ... }
     // etc...
-
-}
