@@ -1,4 +1,4 @@
-/*
+    /*
  * Ficheiro: MainServer.java
  * VERSÃO COM DBManager e ClientListener integrados.
  */
@@ -58,17 +58,19 @@ public class MainServer {
             // 4. FAZER O REGISTO SÍNCRONO NO SERVIÇO DE DIRETORIA
             System.out.println("[MainServer] A registar-se no diretório...");
             String[] registerPayload = { String.valueOf(clientPort), String.valueOf(dbPort) };
-            UDPMessage registerMsg = new UDPMessage(MessageType.SERVER_REGISTER, registerPayload); //
+            UDPMessage registerMsg = new UDPMessage(MessageType.SERVER_REGISTER, registerPayload);
 
             try (DatagramSocket socket = new DatagramSocket()) {
                 socket.setSoTimeout(DIRECTORY_RESPONSE_TIMEOUT_MS);
+
                 byte[] sendData = SerializationUtils.serialize(registerMsg); //
                 DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, config.getDirectoryAddress(), config.getDirectoryPort());
                 socket.send(sendPacket);
 
                 byte[] receiveData = new byte[4096];
                 DatagramPacket receivePacket = new DatagramPacket(receiveData, receiveData.length);
-                socket.receive(receivePacket);
+                socket.receive(receivePacket); //bloqueia até receber resposta da diretoria
+
                 UDPMessage responseMsg = (UDPMessage) SerializationUtils.deserialize(receiveData); //
 
                 if (responseMsg.getType() == MessageType.SERVER_REGISTER_OK) { //

@@ -233,23 +233,33 @@ public class ConsoleUI implements Runnable {
      * Menu de funcionalidades para o Estudante.
      */
     private void menuEstudante() {
-        // TODO: Implementar o menu do estudante
-        System.out.println("\n--- Menu Estudante (" + loggedInUser.getNome() + ") ---");
-        System.out.println("1. Responder a Pergunta (TODO)");
-        System.out.println("2. Ver Respostas Submetidas (TODO)");
-        System.out.println("0. Logout");
-        System.out.print("Escolha: ");
+        int choice;
+        do {
+            System.out.println("\n--- Menu Estudante (" + loggedInUser.getNome() + ") ---");
+            System.out.println("1. Responder a Pergunta");
+            System.out.println("2. Ver Respostas Submetidas (TODO)");
+            System.out.println("0. Logout");
+            System.out.print("Escolha: ");
 
-        int choice = -1;
-        try {
-            choice = Integer.parseInt(scanner.nextLine());
-        } catch (NumberFormatException e) { /* ignora */ }
+            try {
+                choice = Integer.parseInt(scanner.nextLine());
+            } catch (NumberFormatException e) { choice = -1; }
 
-        if (choice == 0) {
-            System.out.println("A fazer logout...");
-        } else {
-            System.out.println("Funcionalidade ainda não implementada.");
-        }
+            switch (choice) {
+                case 1:
+                    handleAnswerQuestion(); // <<< CHAMAR O NOVO MÉTODO
+                    break;
+                case 2:
+                    System.out.println("Funcionalidade ainda não implementada.");
+                    break;
+                case 0:
+                    System.out.println("A fazer logout...");
+                    break;
+                default:
+                    System.out.println("Opção inválida.");
+                    break;
+            }
+        } while (choice != 0);
     }
 
     /**
@@ -306,7 +316,7 @@ public class ConsoleUI implements Runnable {
 
             // TODO: Criar o método 'createQuestion' no ServerConnection
             String accessCode = connection.createQuestion(newQuestion);
-            String accessCode = "ABC123_TESTE"; // Placeholder
+            //String accessCode = "ABC123_TESTE"; // Placeholder
 
             if (accessCode != null) {
                 System.out.println("Pergunta criada com sucesso!");
@@ -321,6 +331,46 @@ public class ConsoleUI implements Runnable {
             System.err.println("Número de opções inválido.");
         } catch (Exception e) {
             System.err.println("Ocorreu um erro inesperado: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Recolhe o código de uma pergunta, pede ao servidor,
+     * mostra-a ao estudante e submete a resposta.
+     */
+    private void handleAnswerQuestion() {
+        System.out.println("\n--- Responder a Pergunta ---");
+        System.out.print("Insira o Código de Acesso da Pergunta: ");
+        String accessCode = scanner.nextLine().trim().toUpperCase();
+
+        // 1. Pedir a pergunta ao servidor
+        System.out.println("A procurar a pergunta...");
+        Question q = connection.getQuestionByCode(accessCode);
+
+        // 2. Verificar se a pergunta é válida
+        if (q == null) {
+            System.err.println("Pergunta não encontrada. O código pode estar errado ou a pergunta pode não estar ativa.");
+            return;
+        }
+
+        // 3. Mostrar a pergunta e as opções
+        System.out.println("\nPERGUNTA ENCONTRADA!");
+        System.out.println("---------------------------------");
+        System.out.println("Enunciado: " + q.getEnunciado());
+        System.out.println("Opções:");
+        for (Option op : q.getOptions()) {
+            System.out.println("  " + op.getLetter() + ") " + op.getTextOption());
+        }
+        System.out.println("---------------------------------");
+        System.out.print("A sua resposta (ex: 'a'): ");
+        String resposta = scanner.nextLine().trim().toLowerCase();
+
+        // 4. Submeter a resposta
+        System.out.println("A submeter resposta...");
+        if (connection.submitAnswer(q.getId(), resposta)) {
+            System.out.println("Resposta submetida com sucesso!");
+        } else {
+            System.err.println("Falha ao submeter a resposta. (Já respondeu ou a pergunta expirou?)");
         }
     }
 }

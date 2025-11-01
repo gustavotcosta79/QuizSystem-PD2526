@@ -47,7 +47,7 @@ public class DirectoryService extends Thread {
                 try {
                     // 1. Receber o PACOTE de bytes
                     DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
-                    socket.receive(packet);
+                    socket.receive(packet); //fica bloqueado aqui até chegar um pacote UDP
 
                     // 2. DESERIALIZAR (Agora com o teu Utils)
                     // Nota: temos de copiar os dados recebidos para um array

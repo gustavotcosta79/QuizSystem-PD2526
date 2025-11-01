@@ -10,9 +10,11 @@ import pt.isec.pd.tp.g11.common.model.*;
 import pt.isec.pd.tp.g11.server.utils.SecurityUtils;
 import java.sql.Timestamp;
 import java.sql.ResultSet;
-
 import java.io.File;
 import java.sql.*;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 public class DatabaseManager {
 
@@ -437,8 +439,11 @@ public class DatabaseManager {
                 pstmtQuestion.setString(2, accessCode);
                 pstmtQuestion.setString(3, question.getEnunciado());
                 // Converter LocalDateTime para Timestamp SQL
-                pstmtQuestion.setTimestamp(4, Timestamp.valueOf(question.getBeginDateHour()));
-                pstmtQuestion.setTimestamp(5, Timestamp.valueOf(question.getEndDateHour()));
+                // --- MUDANÇA AQUI: Guardar como String ISO ---
+                // (O LocalDateTime.toString() gera o formato "2025-11-01T17:48")
+                pstmtQuestion.setString(4, question.getBeginDateHour().toString());
+                pstmtQuestion.setString(5, question.getEndDateHour().toString());
+                // --- FIM DA MUDANÇA ---
                 pstmtQuestion.setString(6, question.getCorrectAnswer());
 
                 pstmtQuestion.executeUpdate();
@@ -531,6 +536,80 @@ public class DatabaseManager {
         }
     }
 
+    // ... (depois do teu método createQuestion)
+
+    /**
+     * Procura uma pergunta pelo código de acesso E verifica se está ativa.
+     *
+     * @param accessCode O código da pergunta.
+     * @return O objeto Question (com a lista de Options) se estiver ativa, null caso contrário.
+     */
+    // ... (depois do teu método createQuestion)
+
+    /**
+     * Procura uma pergunta pelo código de acesso E verifica se está ativa.
+     *
+     * @param accessCode O código da pergunta.
+     * @return O objeto Question (com a lista de Options) se estiver ativa, null caso contrário.
+     */
+    public Question getActiveQuestionByCode(String accessCode) {
+        if (connection == null) return null;
+
+        // --- CORREÇÃO DA QUERY SQL ---
+                // Usamos strftime para forçar o formato ISO (com 'T') a corresponder
+                // ao formato guardado pelo LocalDateTime.toString()
+                String sqlQuestion = "SELECT * FROM Pergunta WHERE codigoAcesso = ? AND " +
+                "strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime') BETWEEN dataHoraInicio AND dataHoraFim";
+        // --- FIM DA CORREÇÃO ---
+
+        String sqlOptions = "SELECT letra, textoOpcao FROM Opcao WHERE idPergunta = ?";
+
+        Question question = null;
+
+        // Precisas de importar java.util.List e java.util.ArrayList
+        java.util.List<Option> options = new java.util.ArrayList<>();
+
+        try (PreparedStatement pstmtQuestion = connection.prepareStatement(sqlQuestion)) {
+            pstmtQuestion.setString(1, accessCode);
+            ResultSet rsQuestion = pstmtQuestion.executeQuery();
+
+            if (rsQuestion.next()) {
+                // Se encontrámos a pergunta, ela está ativa. Vamos preencher o objeto.
+                int idPergunta = rsQuestion.getInt("id");
+                String enunciado = rsQuestion.getString("enunciado");
+                // Precisas de importar java.time.LocalDateTime
+                String respostaCerta = rsQuestion.getString("respostaCerta");
+
+                // --- MUDANÇA AQUI: Ler como String e fazer parse ---
+                // (Precisas de importar java.time.LocalDateTime)
+                java.time.LocalDateTime inicio = java.time.LocalDateTime.parse(rsQuestion.getString("dataHoraInicio"));
+                java.time.LocalDateTime fim = java.time.LocalDateTime.parse(rsQuestion.getString("dataHoraFim"));
+                // --- FIM DA MUDANÇA ---
+
+                // Agora, ir buscar as opções
+                try (PreparedStatement pstmtOptions = connection.prepareStatement(sqlOptions)) {
+                    pstmtOptions.setInt(1, idPergunta);
+                    ResultSet rsOptions = pstmtOptions.executeQuery();
+                    while (rsOptions.next()) {
+                        options.add(new Option(rsOptions.getString("letra"), rsOptions.getString("textoOpcao")));
+                    }
+                }
+
+                // Criar o objeto Question para enviar ao cliente
+                question = new Question(enunciado, inicio, fim, respostaCerta, options);
+                question.setId(idPergunta);
+                question.setAccessCode(accessCode);
+                question.setIdDocente(rsQuestion.getInt("idDocente"));
+            }
+            // Se rsQuestion.next() for false, a pergunta não existe ou não está ativa
+            // (porque o código está errado OU o período de tempo está errado)
+            // e o método devolve null.
+
+        } catch (SQLException e) {
+            System.err.println("[DBManager] Erro ao procurar pergunta por código: " + e.getMessage());
+        }
+        return question;
+    }
 }
 
     // --- Métodos Futuros ---

@@ -143,7 +143,7 @@ public class ServerConnection {
                     // this.notificationListener = new NotificationListener(in);
                     // this.notificationListener.start();
 
-                    return user; // SUCESSO! Devolve o objeto User
+                    return user;
                 } else {
                     System.err.println("[Comunicação] Payload inválido para LOGIN_SUCCESS.");
                     closeConnection();
@@ -353,7 +353,43 @@ public class ServerConnection {
         }
     }
 
+// ... (depois do teu método createQuestion)
 
+    /**
+     * Pede ao servidor uma pergunta, dado o seu código de acesso.
+     *
+     * @param accessCode O código de acesso (ex: "ABC123")
+     * @return O objeto Question se for encontrado e ativo, ou null se falhar.
+     */
+    public Question getQuestionByCode(String accessCode) {
+        if (tcpSocket == null || tcpSocket.isClosed()) {
+            System.err.println("[Comunicação] Não está ligado ao servidor.");
+            return null;
+        }
+
+        try {
+            // 1. Enviar pedido
+            TCPMessage request = new TCPMessage(MessageType.GET_QUESTION_BY_CODE, accessCode);
+            out.writeObject(request);
+            out.flush();
+
+            // 2. Esperar resposta
+            TCPMessage response = (TCPMessage) in.readObject();
+
+            // 3. Processar resposta
+            if (response.getType() == MessageType.GET_QUESTION_SUCCESS) {
+                if (response.getPayload() instanceof Question) {
+                    return (Question) response.getPayload(); // SUCESSO!
+                }
+            } else {
+                String errorMsg = (response.getPayload() instanceof String) ? (String) response.getPayload() : "Erro desconhecido.";
+                System.err.println("[Comunicação] Falha ao obter pergunta: " + errorMsg);
+            }
+        } catch (Exception e) {
+            System.err.println("[Comunicação] Erro crítico ao obter pergunta: " + e.getMessage());
+        }
+        return null; // Falha
+    }
 
 
     // TODO: Métodos futuros que a Vista irá chamar

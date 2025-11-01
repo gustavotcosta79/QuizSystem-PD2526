@@ -74,6 +74,14 @@
                         case CREATE_QUESTION_REQUEST:
                             handleCreateQuestion(mainRequest);
                             break;
+                        // --- NOVOS CASES PARA O ESTUDANTE ---
+                        case GET_QUESTION_BY_CODE:
+                            handleGetQuestionByCode(mainRequest);
+                            break;
+
+                        case SUBMIT_ANSWER:
+                            handleSubmitAnswer(mainRequest);
+                            break;
 
                         // TODO: Adicionar outros cases (LIST_QUESTIONS, EDIT_QUESTION, etc.)
 
@@ -280,6 +288,39 @@
                 // TODO: Enviar heartbeat com query SQL para sincronizar backups
             } else {
                 out.writeObject(new TCPMessage(MessageType.SUBMIT_ANSWER_FAILED, "Erro ao submeter: Já respondeu a esta pergunta?"));
+            }
+        }
+
+        /**
+         * Trata de um pedido de um estudante para obter uma pergunta
+         * usando um código de acesso.
+         */
+        private void handleGetQuestionByCode(TCPMessage request) throws Exception {
+            // 1. Verificar se o utilizador é um Estudante
+            if (!(authenticatedUser instanceof Estudante)) {
+                out.writeObject(new TCPMessage(MessageType.GET_QUESTION_FAILED, "Apenas Estudantes podem responder a perguntas."));
+                return;
+            }
+
+            // 2. Verificar o payload (String accessCode)
+            if (!(request.getPayload() instanceof String)) {
+                out.writeObject(new TCPMessage(MessageType.GET_QUESTION_FAILED, "Payload inválido (esperado String)."));
+                return;
+            }
+
+            String accessCode = (String) request.getPayload();
+
+            // 3. Chamar o DatabaseManager
+            // Este método (que acabámos de criar) já verifica se a pergunta está ativa
+            Question question = dbManager.getActiveQuestionByCode(accessCode);
+
+            // 4. Enviar a resposta
+            if (question != null) {
+                // Sucesso! Envia o objeto Question completo
+                out.writeObject(new TCPMessage(MessageType.GET_QUESTION_SUCCESS, question));
+            } else {
+                // Falha (código errado ou pergunta expirada/inexistente)
+                out.writeObject(new TCPMessage(MessageType.GET_QUESTION_FAILED, "Código de acesso inválido ou a pergunta não está disponível."));
             }
         }
 
