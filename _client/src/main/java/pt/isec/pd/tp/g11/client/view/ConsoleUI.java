@@ -220,7 +220,8 @@ public class ConsoleUI implements Runnable {
                     break;
                 case 0:
                     System.out.println("A fazer logout...");
-                    // TODO: Chamar connection.logout() se necessário
+                    connection.closeConnection();
+
                     break;
                 default:
                     System.out.println("Opção inválida.");
@@ -254,6 +255,7 @@ public class ConsoleUI implements Runnable {
                     break;
                 case 0:
                     System.out.println("A fazer logout...");
+                    connection.closeConnection();
                     break;
                 default:
                     System.out.println("Opção inválida.");

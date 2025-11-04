@@ -566,7 +566,6 @@ public class DatabaseManager {
 
         Question question = null;
 
-        // Precisas de importar java.util.List e java.util.ArrayList
         java.util.List<Option> options = new java.util.ArrayList<>();
 
         try (PreparedStatement pstmtQuestion = connection.prepareStatement(sqlQuestion)) {
