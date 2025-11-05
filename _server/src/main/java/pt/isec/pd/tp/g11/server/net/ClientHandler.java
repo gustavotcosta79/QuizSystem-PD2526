@@ -17,6 +17,7 @@
     import java.io.ObjectOutputStream;
     import java.net.Socket;
     import java.net.SocketTimeoutException;
+    import java.util.List;
 
     public class ClientHandler extends Thread {
 
@@ -82,6 +83,12 @@
                         case SUBMIT_ANSWER:
                             handleSubmitAnswer(mainRequest);
                             break;
+
+                        // <<< NOVO CASE AQUI >>>
+                        case GET_MY_QUESTIONS_REQUEST:
+                            handleGetMyQuestions(mainRequest);
+                            break;
+                        // --- FIM DO NOVO CASE ---
 
                         // TODO: Adicionar outros cases (LIST_QUESTIONS, EDIT_QUESTION, etc.)
 
@@ -322,6 +329,32 @@
                 // Falha (código errado ou pergunta expirada/inexistente)
                 out.writeObject(new TCPMessage(MessageType.GET_QUESTION_FAILED, "Código de acesso inválido ou a pergunta não está disponível."));
             }
+        }
+
+        /**
+         * Trata de um pedido de um docente para listar as suas próprias perguntas.
+         */
+        private void handleGetMyQuestions(TCPMessage request) throws Exception {
+            // 1. Verificar se o utilizador é um Docente
+            if (!(authenticatedUser instanceof Docente)) {
+                out.writeObject(new TCPMessage(MessageType.GET_MY_QUESTIONS_FAILED, "Apenas Docentes podem listar perguntas."));
+                return;
+            }
+
+            // 2. Verificar o payload (String filtro)
+            if (!(request.getPayload() instanceof String)) {
+                out.writeObject(new TCPMessage(MessageType.GET_MY_QUESTIONS_FAILED, "Payload inválido (esperado String com o filtro)."));
+                return;
+            }
+            String filter = (String) request.getPayload();
+
+            // 3. Chamar o DatabaseManager (usando o ID do utilizador autenticado)
+            List<Question> questions = dbManager.getQuestionsByTeacher(authenticatedUser.getId(), filter);
+
+            // 4. Enviar a resposta (mesmo que a lista esteja vazia)
+            // O cliente (ServerConnection) espera uma Lista, por isso enviamos uma lista (Serializable)
+            // está à espera da resposta no métodogetMyQuestions (que estava bloqueado em in.readObject())
+            out.writeObject(new TCPMessage(MessageType.GET_MY_QUESTIONS_SUCCESS, (java.io.Serializable) questions));
         }
 
 

@@ -21,6 +21,7 @@ import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.Socket;
 import java.net.SocketTimeoutException;
+import java.util.List;
 
 public class ServerConnection {
 
@@ -351,6 +352,43 @@ public class ServerConnection {
             System.err.println("[Comunicação] Erro ao submeter resposta: " + e.getMessage());
             return false;
         }
+    }
+
+    /**
+     * Pede ao servidor a lista de perguntas criadas pelo docente logado.
+     * @param filter O filtro ("ALL", "ACTIVE", "FUTURE", "PAST")
+     * @return Uma Lista de Questions, ou null se falhar.
+     */
+    public List<Question> getMyQuestions(String filter) {
+        if (tcpSocket == null || tcpSocket.isClosed()) {
+            System.err.println("[Comunicação] Não está ligado ao servidor.");
+            return null;
+        }
+
+        try {
+            // 1. Enviar pedido (para o ClientHandler que estava bloqueado no seu loop)
+            TCPMessage request = new TCPMessage(MessageType.GET_MY_QUESTIONS_REQUEST, filter);
+            out.writeObject(request);
+            out.flush();
+
+            // 2. Esperar resposta
+            //recebe a resposta vinda do clientHandler
+            TCPMessage response = (TCPMessage) in.readObject();
+
+            // 3. Processar resposta
+            if (response.getType() == MessageType.GET_MY_QUESTIONS_SUCCESS) {
+                if (response.getPayload() instanceof List) {
+                    // Fazemos um cast (é seguro se confiarmos no servidor)
+                    return (List<Question>) response.getPayload(); // SUCESSO!
+                }
+            } else {
+                String errorMsg = (response.getPayload() instanceof String) ? (String) response.getPayload() : "Erro desconhecido.";
+                System.err.println("[Comunicação] Falha ao obter lista de perguntas: " + errorMsg);
+            }
+        } catch (Exception e) {
+            System.err.println("[Comunicação] Erro crítico ao obter perguntas: " + e.getMessage());
+        }
+        return null; // Falha (devolve null, a UI trata disso)
     }
 
 // ... (depois do teu método createQuestion)

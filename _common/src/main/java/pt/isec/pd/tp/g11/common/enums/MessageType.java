@@ -33,6 +33,12 @@ public enum MessageType implements Serializable {
     SUBMIT_ANSWER_SUCCESS,  // Servidor -> Cliente (Sem payload)
     SUBMIT_ANSWER_FAILED,   // Servidor -> Cliente (Payload: String "Erro...")
 
+    // --- NOVOS TIPOS PARA LISTAR PERGUNTAS (DOCENTE) ---
+    GET_MY_QUESTIONS_REQUEST,  // Cliente -> Servidor (Payload: String filtro, ex: "ALL", "ACTIVE", "FUTURE", "PAST")
+    GET_MY_QUESTIONS_SUCCESS, // Servidor -> Cliente (Payload: List<Question>)  ---> se foi sucesso e consegue retornar a lista
+    GET_MY_QUESTIONS_FAILED,  // Servidor -> Cliente (Payload: String "Erro...") --> se foi insucesso e
+                                                                                // não consegue retornar a lista
+
 
 
     // --- Tipos Futuros para TCP (Perguntas, etc.) ---

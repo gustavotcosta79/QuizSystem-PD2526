@@ -609,6 +609,76 @@ public class DatabaseManager {
         }
         return question;
     }
+
+    /**
+     * Obtém a lista de perguntas criadas por um docente específico.
+     *
+     * @param idDocente O ID do docente autenticado.
+     * @param filter O filtro a aplicar ("ALL", "ACTIVE", "FUTURE", "PAST").
+     * @return Uma lista de objetos Question (pode estar vazia).
+     */
+    public List<Question> getQuestionsByTeacher(int idDocente, String filter) {
+        if (connection == null) return new ArrayList<>(); // se conexão com a base de dados não tiver sido bem sucedida
+                                                        // Retorna lista vazia
+
+        List<Question> questions = new ArrayList<>();
+
+        // Começamos a query SQL básica
+        String sql = "SELECT * FROM Pergunta WHERE idDocente = ?";
+
+        // Adicionamos os filtros de tempo
+        String now = "datetime('now', 'localtime')";
+        switch (filter.toUpperCase()) {
+            case "ACTIVE": // Ativas: now ESTÁ entre inicio e fim
+                sql += " AND " + now + " BETWEEN dataHoraInicio AND dataHoraFim";
+                break;
+            case "FUTURE": // Futuras: now é ANTES do inicio
+                sql += " AND " + now + " < dataHoraInicio";
+                break;
+            case "PAST": // Expiradas: now é DEPOIS do fim
+                sql += " AND " + now + " > dataHoraFim";
+                break;
+            case "ALL":
+            default:
+                // Não adiciona filtro de tempo
+                break;
+        }
+        sql += " ORDER BY dataHoraInicio DESC"; // Ordenar pelas mais recentes
+
+        try (PreparedStatement pstmtQuestion = connection.prepareStatement(sql)) {
+            pstmtQuestion.setInt(1, idDocente);
+            ResultSet rsQuestion = pstmtQuestion.executeQuery();
+
+            while (rsQuestion.next()) {
+                // Para cada pergunta, preenchemos o objeto
+                int idPergunta = rsQuestion.getInt("id");
+                String enunciado = rsQuestion.getString("enunciado");
+                LocalDateTime inicio = LocalDateTime.parse(rsQuestion.getString("dataHoraInicio"));
+                LocalDateTime fim = LocalDateTime.parse(rsQuestion.getString("dataHoraFim"));
+                String respostaCerta = rsQuestion.getString("respostaCerta");
+                String codigoAcesso = rsQuestion.getString("codigoAcesso");
+
+                // NOTA: Esta query NÃO carrega as Opções.
+                // É mais eficiente carregar as opções só se o utilizador
+                // quiser ver os detalhes de UMA pergunta.
+                // Por agora, a lista de opções fica vazia.
+                List<Option> options = new ArrayList<>();
+
+                Question q = new Question(enunciado, inicio, fim, respostaCerta, options);
+                q.setId(idPergunta);
+                q.setIdDocente(idDocente);
+                q.setAccessCode(codigoAcesso);
+
+                questions.add(q);
+            }
+
+        } catch (SQLException e) {
+            System.err.println("[DBManager] Erro ao listar perguntas do docente: " + e.getMessage());
+        }
+        return questions;
+    }
+
+
 }
 
     // --- Métodos Futuros ---

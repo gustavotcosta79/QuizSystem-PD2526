@@ -215,7 +215,10 @@ public class ConsoleUI implements Runnable {
                 case 1:
                     handleCreateQuestion();
                     break;
-                case 2: case 3: case 4: case 5:
+                case 2:
+                    handleListMyQuestions();
+                    break;
+                    case 3: case 4: case 5:
                     System.out.println("Funcionalidade ainda não implementada.");
                     break;
                 case 0:
@@ -233,7 +236,7 @@ public class ConsoleUI implements Runnable {
     /**
      * Menu de funcionalidades para o Estudante.
      */
-    private void menuEstudante() {
+        private void menuEstudante() {
         int choice;
         do {
             System.out.println("\n--- Menu Estudante (" + loggedInUser.getNome() + ") ---");
@@ -374,5 +377,53 @@ public class ConsoleUI implements Runnable {
         } else {
             System.err.println("Falha ao submeter a resposta. (Já respondeu ou a pergunta expirou?)");
         }
+    }
+
+    /**
+     * Pede ao utilizador um filtro e lista as suas perguntas.
+     */
+    private void handleListMyQuestions() {
+        System.out.println("\n--- Listar Minhas Perguntas ---");
+        System.out.println("Aplicar filtro:");
+        System.out.println(" 1. Todas");
+        System.out.println(" 2. Ativas (a decorrer)");
+        System.out.println(" 3. Futuras (ainda não começaram)");
+        System.out.println(" 4. Expiradas (já terminaram)");
+        System.out.print("Escolha o filtro: ");
+
+        String filter = "ALL"; // Default
+        try {
+            int choice = Integer.parseInt(scanner.nextLine());
+            switch (choice) {
+                case 2: filter = "ACTIVE"; break;
+                case 3: filter = "FUTURE"; break;
+                case 4: filter = "PAST"; break;
+            }
+        } catch (Exception e) { /* Usa o default "ALL" */ }
+
+        System.out.println("A obter perguntas do servidor...");
+        List<Question> questions = connection.getMyQuestions(filter);
+
+        if (questions == null) {
+            System.err.println("Erro ao obter a lista de perguntas.");
+            return;
+        }
+
+        if (questions.isEmpty()) {
+            System.out.println("Nenhuma pergunta encontrada com este filtro.");
+            return;
+        }
+
+        System.out.println("\n--- As Suas Perguntas (" + filter + ") ---");
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
+
+        for (Question q : questions) {
+            System.out.println("---------------------------------");
+            System.out.println(" ID: " + q.getId() + " | Código: " + q.getAccessCode());
+            System.out.println(" Pergunta: " + q.getEnunciado());
+            System.out.println(" Início: " + q.getBeginDateHour().format(formatter));
+            System.out.println(" Fim: " + q.getEndDateHour().format(formatter));
+        }
+        System.out.println("---------------------------------");
     }
 }
