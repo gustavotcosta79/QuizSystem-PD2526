@@ -429,6 +429,30 @@ public class ServerConnection {
         return null; // Falha
     }
 
+    public boolean deleteQuestion(int idPergunta) {
+        if (tcpSocket == null || tcpSocket.isClosed()) return false;
+
+        try {
+            TCPMessage request = new TCPMessage(MessageType.DELETE_QUESTION_REQUEST, idPergunta);
+            out.writeObject(request);
+            out.flush();
+
+            TCPMessage response = (TCPMessage) in.readObject();
+
+            if (response.getType() == MessageType.DELETE_QUESTION_SUCCESS) {
+                return true;
+            } else {
+                String errorMsg = (response.getPayload() instanceof String) ? (String) response.getPayload() : "Erro.";
+                System.err.println("[Comunicação] Falha ao eliminar: " + errorMsg);
+                return false;
+            }
+        } catch (Exception e) {
+            System.err.println("[Comunicação] Erro crítico ao eliminar: " + e.getMessage());
+            // TODO: Aqui entrará o failover
+            return false;
+        }
+    }
+
 
     // TODO: Métodos futuros que a Vista irá chamar
     /*

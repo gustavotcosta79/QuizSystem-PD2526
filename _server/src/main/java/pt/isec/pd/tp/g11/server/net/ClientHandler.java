@@ -76,7 +76,6 @@
                         case CREATE_QUESTION_REQUEST:
                             handleCreateQuestion(mainRequest);
                             break;
-                        // --- NOVOS CASES PARA O ESTUDANTE ---
                         case GET_QUESTION_BY_CODE:
                             handleGetQuestionByCode(mainRequest);
                             break;
@@ -85,12 +84,13 @@
                             handleSubmitAnswer(mainRequest);
                             break;
 
-                        // <<< NOVO CASE AQUI >>>
                         case GET_MY_QUESTIONS_REQUEST:
                             handleGetMyQuestions(mainRequest);
                             break;
-                        // --- FIM DO NOVO CASE ---
 
+                        case DELETE_QUESTION_REQUEST:
+                            handleDeleteQuestion(mainRequest);
+                            break;
                         // TODO: Adicionar outros cases (LIST_QUESTIONS, EDIT_QUESTION, etc.)
 
                         default:
@@ -382,6 +382,36 @@
             // O cliente (ServerConnection) espera uma Lista, por isso enviamos uma lista (Serializable)
             // está à espera da resposta no métodogetMyQuestions (que estava bloqueado em in.readObject())
             out.writeObject(new TCPMessage(MessageType.GET_MY_QUESTIONS_SUCCESS, (java.io.Serializable) questions));
+        }
+
+        private void handleDeleteQuestion(TCPMessage request) throws Exception {
+            // 1. Validar utilizador e payload
+            if (!(authenticatedUser instanceof Docente)) {
+                out.writeObject(new TCPMessage(MessageType.DELETE_QUESTION_FAILED, "Apenas docentes."));
+                return;
+            }
+            if (!(request.getPayload() instanceof Integer)) {
+                out.writeObject(new TCPMessage(MessageType.DELETE_QUESTION_FAILED, "Payload inválido (esperado ID)."));
+                return;
+            }
+
+            int idPergunta = (Integer) request.getPayload();
+            int idDocente = authenticatedUser.getId();
+
+            // 2. Tentar eliminar
+            String sqlQuery = dbManager.deleteQuestion(idPergunta, idDocente);
+
+            if (sqlQuery != null) {
+                // 3. Propagar para os Backups
+                int newVersion = dbManager.getDbVersion();
+                heartbeatService.sendUpdate(sqlQuery, newVersion);
+
+                // 4. Responder ao Cliente
+                out.writeObject(new TCPMessage(MessageType.DELETE_QUESTION_SUCCESS));
+                System.out.println("[ClientHandler] Pergunta " + idPergunta + " eliminada e propagada.");
+            } else {
+                out.writeObject(new TCPMessage(MessageType.DELETE_QUESTION_FAILED, "Erro: Pergunta não existe, não é sua, ou já tem respostas."));
+            }
         }
 
 

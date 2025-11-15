@@ -218,9 +218,14 @@ public class ConsoleUI implements Runnable {
                 case 2:
                     handleListMyQuestions();
                     break;
-                    case 3: case 4: case 5:
-                    System.out.println("Funcionalidade ainda não implementada.");
+
+                case 3:
+                    handleDeleteQuestion();
                     break;
+
+                        case 4: case 5:
+                            System.out.println("Funcionalidade ainda não implementada.");
+                        break;
                 case 0:
                     System.out.println("A fazer logout...");
                     connection.closeConnection();
@@ -425,5 +430,25 @@ public class ConsoleUI implements Runnable {
             System.out.println(" Fim: " + q.getEndDateHour().format(formatter));
         }
         System.out.println("---------------------------------");
+    }
+
+    private void handleDeleteQuestion() {
+        System.out.println("\n--- Eliminar Pergunta ---");
+        System.out.println("AVISO: Só pode eliminar perguntas que AINDA NÃO TENHAM RESPOSTAS.");
+        System.out.print("Insira o ID da pergunta a eliminar (pode ver o ID em 'Listar Perguntas'): ");
+
+        try {
+            int id = Integer.parseInt(scanner.nextLine());
+
+            System.out.println("A tentar eliminar pergunta " + id + "...");
+
+            if (connection.deleteQuestion(id)) {
+                System.out.println("Pergunta eliminada com sucesso.");
+            } else {
+                System.err.println("Não foi possível eliminar a pergunta.");
+            }
+        } catch (NumberFormatException e) {
+            System.err.println("ID inválido.");
+        }
     }
 }

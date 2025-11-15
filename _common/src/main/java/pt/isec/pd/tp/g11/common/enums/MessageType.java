@@ -38,7 +38,9 @@ public enum MessageType implements Serializable {
     GET_MY_QUESTIONS_SUCCESS, // Servidor -> Cliente (Payload: List<Question>)  ---> se foi sucesso e consegue retornar a lista
     GET_MY_QUESTIONS_FAILED,  // Servidor -> Cliente (Payload: String "Erro...") --> se foi insucesso e
                                                                                 // não consegue retornar a lista
-
+                                                                                DELETE_QUESTION_REQUEST,  // Cliente -> Servidor (Payload: Integer idPergunta)
+    DELETE_QUESTION_SUCCESS, // Servidor -> Cliente (Sem payload)
+    DELETE_QUESTION_FAILED,  // Servidor -> Cliente (Payload: String "Erro...")
 
 
     // --- Tipos Futuros para TCP (Perguntas, etc.) ---

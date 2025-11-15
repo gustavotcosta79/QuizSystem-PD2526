@@ -695,6 +695,48 @@ public class DatabaseManager {
         }
     }
 
+    /**
+     * Elimina uma pergunta, desde que não tenha respostas.
+     * Retorna a query SQL (DELETE) para replicação, ou null se falhar.
+     */
+    public String deleteQuestion(int idPergunta, int idDocente) {
+        if (connection == null) return null;
+
+        // Query para verificar se a pergunta pertence ao docente E não tem respostas
+        // Usamos 'EXISTS' que é muito eficiente
+        String checkSql = "SELECT id FROM Pergunta WHERE id = ? AND idDocente = ? " +
+                "AND NOT EXISTS (SELECT 1 FROM Resposta WHERE Resposta.idPergunta = Pergunta.id)";
+
+        String deleteSql = String.format("DELETE FROM Pergunta WHERE id = %d", idPergunta);
+
+        try (PreparedStatement pstmtCheck = connection.prepareStatement(checkSql)) {
+            pstmtCheck.setInt(1, idPergunta);
+            pstmtCheck.setInt(2, idDocente);
+
+            try (ResultSet rs = pstmtCheck.executeQuery()) {
+                if (!rs.next()) {
+                    // Se não encontrou, ou a pergunta não é dele, ou já tem respostas
+                    System.err.println("[DBManager] Falha ao eliminar: Pergunta não encontrada, não pertence ao docente, ou já tem respostas.");
+                    return null;
+                }
+            }
+
+            // Se chegou aqui, a verificação passou. Podemos apagar.
+            try (Statement stmt = connection.createStatement()) {
+                stmt.executeUpdate(deleteSql);
+                // NOTA: As opções são eliminadas automaticamente (ON DELETE CASCADE)
+
+                incrementDbVersion();
+                System.out.println("[DBManager] Pergunta " + idPergunta + " eliminada (v" + getDbVersion() + ")");
+                return deleteSql; // Sucesso: retorna a query
+            }
+
+        } catch (SQLException e) {
+            System.err.println("[DBManager] Erro ao eliminar pergunta: " + e.getMessage());
+            return null;
+        }
+    }
+
 }
 
     // --- Métodos Futuros ---
