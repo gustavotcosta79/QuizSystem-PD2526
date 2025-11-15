@@ -10,7 +10,6 @@
     import pt.isec.pd.tp.g11.common.messages.TCPMessage;
     import pt.isec.pd.tp.g11.common.model.*;
     import pt.isec.pd.tp.g11.server.db.DatabaseManager;
-    import pt.isec.pd.tp.g11.server.db.DatabaseManager; // Vais precisar disto
     import pt.isec.pd.tp.g11.server.utils.SecurityUtils;
 
     import java.io.ObjectInputStream;
@@ -26,10 +25,12 @@
         private ObjectOutputStream out;
         private ObjectInputStream in;
         private User authenticatedUser = null;
+        private final HeartbeatService heartbeatService;
 
-        public ClientHandler(Socket socket, DatabaseManager dbManager ) {
+        public ClientHandler(Socket socket, DatabaseManager dbManager, HeartbeatService heartbeatService ) {
             this.clientSocket = socket;
             this.dbManager = dbManager;
+            this.heartbeatService = heartbeatService;
             setName("ClientHandler-" + socket.getInetAddress());
         }
 
@@ -179,20 +180,21 @@
             // 1. Fazer o Hash da password
             String passwordHash = SecurityUtils.hashPassword(plainPassword);
 
-            // 2. Tentar registar na Base de Dados
-            if (dbManager.registerEstudante(estudante, passwordHash)) {
-                // 3. Enviar SUCESSO
-                out.writeObject(new TCPMessage(MessageType.REGISTER_SUCCESS));
-                System.out.println("[ClientHandler] Novo estudante registado: " + estudante.getEmail());
-                // Nota: Não fazemos login automático, o utilizador terá de fazer login
-            } else {
-                // 4. Enviar FALHA (Email ou Número já existem)
-                out.writeObject(new TCPMessage(MessageType.REGISTER_FAILED, "Email ou Número de Estudante já existem."));
-            }
+            // USAR O NOVO MÉTODO QUE DEVOLVE SQL
+            String sqlQuery = dbManager.registerEstudante(estudante, passwordHash);
 
-            // Se o registo falhar ou for bem-sucedido, o 'authenticatedUser' continua 'null'.
-            // O 'run()' vai ver que 'authenticatedUser == null' e vai fechar a ligação,
-            // o que está correto para um pedido de registo que não faz login automático.
+            if (sqlQuery != null) {
+                // Sucesso na BD Local -> Agora avisar o Cluster!
+                int newVersion = dbManager.getDbVersion();
+
+                // Enviar Multicast Imediato
+                heartbeatService.sendUpdate(sqlQuery, newVersion);
+
+                out.writeObject(new TCPMessage(MessageType.REGISTER_SUCCESS));
+                System.out.println("[ClientHandler] Estudante registado e propagado.");
+            } else {
+                out.writeObject(new TCPMessage(MessageType.REGISTER_FAILED, "Erro BD."));
+            }
         }
 
         /**
@@ -220,16 +222,25 @@
             String passwordHash = SecurityUtils.hashPassword(plainPassword);
 
             // 2. Tentar registar na Base de Dados
-            int resultCode = dbManager.registerDocente(docente, passwordHash, registerCode);
+            String result = dbManager.registerDocente(docente, passwordHash, registerCode);
 
             // 3. Enviar resposta
-            if (resultCode == 0) { // Sucesso
-                out.writeObject(new TCPMessage(MessageType.REGISTER_SUCCESS));
-                System.out.println("[ClientHandler] Novo docente registado: " + docente.getEmail());
-            } else if (resultCode == 1) { // Código errado
-                out.writeObject(new TCPMessage(MessageType.REGISTER_FAILED, "Código de registo de docente incorreto."));
-            } else { // Erro 2 (Email duplicado ou outro)
+            if (result == null) { // Sucesso
                 out.writeObject(new TCPMessage(MessageType.REGISTER_FAILED, "Email já existente ou erro interno."));
+            } else if (result.equals("WRONG_CODE")) {
+                // Caso "WRONG_CODE": O código de docente estava errado
+                out.writeObject(new TCPMessage(MessageType.REGISTER_FAILED, "Código de registo de docente incorreto."));
+            } else {
+                // Caso SUCESSO (é uma query SQL):
+                // 1. Obter a nova versão
+                int newVersion = dbManager.getDbVersion();
+
+                // 2. Enviar Multicast para os backups
+                heartbeatService.sendUpdate(result, newVersion);
+
+                // 3. Responder ao Cliente
+                out.writeObject(new TCPMessage(MessageType.REGISTER_SUCCESS));
+                System.out.println("[ClientHandler] Docente registado e propagado para o cluster.");
             }
 
             // Tal como no registo de estudante, o 'authenticatedUser' fica 'null'
@@ -258,12 +269,20 @@
 
             // 3. Chamar o DatabaseManager para inserir na BD
             // (O ID do docente é o do utilizador autenticado)
-            String accessCode = dbManager.createQuestion(question, authenticatedUser.getId());
+            String[] result = dbManager.createQuestion(question, authenticatedUser.getId());
 
             // 4. Enviar a resposta
-            if (accessCode != null) {
-                System.out.println("[ClientHandler] Docente " + authenticatedUser.getEmail() + " criou pergunta. Código: " + accessCode);
+            if (result != null) {
+                String accessCode = result[0];
+                String sqlQuery = result[1]; // Esta string tem os INSERTs todos separados por ;
+
+                // 1. Enviar Multicast
+                int newVersion = dbManager.getDbVersion();
+                heartbeatService.sendUpdate(sqlQuery, newVersion);
+
+                // 2. Responder ao Cliente
                 out.writeObject(new TCPMessage(MessageType.CREATE_QUESTION_SUCCESS, accessCode));
+                System.out.println("[ClientHandler] Pergunta criada e propagada.");
             } else {
                 System.err.println("[ClientHandler] Falha ao criar pergunta na BD.");
                 out.writeObject(new TCPMessage(MessageType.CREATE_QUESTION_FAILED, "Erro interno do servidor ao guardar a pergunta."));
@@ -290,12 +309,20 @@
             // Usar o ID do estudante autenticado na sessão
             int idEstudante = authenticatedUser.getId();
 
-            if (dbManager.submitAnswer(idEstudante, idPergunta, respostaLetra)) {
+            String sqlQuery = dbManager.submitAnswer(idEstudante, idPergunta, respostaLetra);
+
+            if (sqlQuery != null) {
+                // 1. Enviar Multicast
+                int newVersion = dbManager.getDbVersion();
+                heartbeatService.sendUpdate(sqlQuery, newVersion);
+
+                // 2. Responder ao Cliente
                 out.writeObject(new TCPMessage(MessageType.SUBMIT_ANSWER_SUCCESS));
-                // TODO: Enviar heartbeat com query SQL para sincronizar backups
+                System.out.println("[ClientHandler] Resposta submetida e propagada.");
             } else {
-                out.writeObject(new TCPMessage(MessageType.SUBMIT_ANSWER_FAILED, "Erro ao submeter: Já respondeu a esta pergunta?"));
+                out.writeObject(new TCPMessage(MessageType.SUBMIT_ANSWER_FAILED, "Erro: Já respondeu ou erro de BD."));
             }
+
         }
 
         /**

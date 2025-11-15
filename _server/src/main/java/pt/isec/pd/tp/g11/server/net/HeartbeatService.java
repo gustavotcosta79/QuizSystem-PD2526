@@ -46,6 +46,30 @@ public class HeartbeatService extends Thread {
         interrupt(); // Interrompe o Thread.sleep()
     }
 
+    public void sendUpdate(String sqlQuery, int newVersion) {
+        try (DatagramSocket socket = new DatagramSocket()) {
+            // Payload: {clientPort, dbPort, dbVersion, SQL_QUERY}
+            String[] payload = {
+                    String.valueOf(serverClientPort),
+                    String.valueOf(serverDbPort),
+                    String.valueOf(newVersion),
+                    sqlQuery // <--- A query vai na posição 3
+            };
+
+            UDPMessage msg = new UDPMessage(MessageType.SERVER_HEARTBEAT, payload);
+            byte[] data = SerializationUtils.serialize(msg);
+
+            // Enviar MULTICAST (para os backups)
+            DatagramPacket packet = new DatagramPacket(data, data.length, multicastAddress, multicastPort); // multicastPort = 3030
+            socket.send(packet);
+
+            System.out.println("[Heartbeat] Update Multicast enviado (v" + newVersion + ")");
+
+        } catch (Exception e) {
+            System.err.println("[Heartbeat] Erro ao enviar update: " + e.getMessage());
+        }
+    }
+
     @Override
     public void run() {
         try (DatagramSocket socket = new DatagramSocket()) {

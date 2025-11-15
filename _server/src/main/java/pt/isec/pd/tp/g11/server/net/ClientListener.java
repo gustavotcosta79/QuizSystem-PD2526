@@ -9,10 +9,12 @@ public class ClientListener extends Thread {
 
     private final ServerSocket serverSocket;
     private final DatabaseManager dbManager; // Vais precisar de passar isto
+    private final HeartbeatService heartbeatService;
 
-    public ClientListener (ServerSocket serverSocket ,DatabaseManager dbManager){
+    public ClientListener (ServerSocket serverSocket ,DatabaseManager dbManager, HeartbeatService heartbeatService){
         this.serverSocket = serverSocket;
-         this.dbManager = dbManager;
+        this.dbManager = dbManager;
+        this.heartbeatService = heartbeatService;
         setName("ClientListener"); // Boa prática
     }
 
@@ -30,7 +32,7 @@ public class ClientListener extends Thread {
                 System.out.println("[ClientListener] Novo cliente ligado: " + clientSocket.getInetAddress());
 
                 // Lança uma thread para tratar do cliente
-                ClientHandler handler = new ClientHandler(clientSocket ,dbManager );
+                ClientHandler handler = new ClientHandler(clientSocket ,dbManager,heartbeatService);
                 handler.start(); // Inicia a thread ClientHandler
             }
         } catch (java.net.SocketException e) {
