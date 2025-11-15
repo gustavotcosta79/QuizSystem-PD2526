@@ -199,11 +199,12 @@ public class ConsoleUI implements Runnable {
         int choice;
         do {
             System.out.println("\n--- Menu Docente (" + loggedInUser.getNome() + ") ---");
-            System.out.println("1. Criar Nova Pergunta");
-            System.out.println("2. Listar Minhas Perguntas (TODO)");
-            System.out.println("3. Editar Pergunta (TODO)");
-            System.out.println("4. Eliminar Pergunta (TODO)");
-            System.out.println("5. Ver Resultados de Pergunta Expirada (TODO)");
+            System.out.println("1. Criar Nova Pergunta"); // sincronizacao feita
+            System.out.println("2. Listar Minhas Perguntas"); //(leitura) Nao é preciso fazer sicronizacao
+            System.out.println("3. Editar Pergunta"); //sincronizacao feita
+            System.out.println("4. Eliminar Pergunta ");//sincronizacao feita
+            System.out.println("5. Ver Resultados de Pergunta Expirada (TODO)"); // filtro para ver ou exportar para csv
+            System.out.println("6. Editar Registo Pessoal (Docente)\n"); //sincronizado
             System.out.println("0. Logout");
             System.out.print("Escolha: ");
 
@@ -218,14 +219,21 @@ public class ConsoleUI implements Runnable {
                 case 2:
                     handleListMyQuestions();
                     break;
-
                 case 3:
+                    handleEditQuestion();
+                    break;
+                case 4:
                     handleDeleteQuestion();
                     break;
-
-                        case 4: case 5:
-                            System.out.println("Funcionalidade ainda não implementada.");
-                        break;
+                case 5:
+                    //...();
+                    System.out.println("Nao implementado!");
+                    break;
+                case 6:
+                    System.out.println("Nao implementado!");
+                    handleEditProfileDocente();
+                    //handleEditProfileDocente(); //
+                    break;
                 case 0:
                     System.out.println("A fazer logout...");
                     connection.closeConnection();
@@ -245,8 +253,9 @@ public class ConsoleUI implements Runnable {
         int choice;
         do {
             System.out.println("\n--- Menu Estudante (" + loggedInUser.getNome() + ") ---");
-            System.out.println("1. Responder a Pergunta");
-            System.out.println("2. Ver Respostas Submetidas (TODO)");
+            System.out.println("1. Responder a Pergunta"); // Esta sincronizado
+            System.out.println("2. Ver Respostas Submetidas (TODO)"); //(leitura)
+            System.out.println("3. Editar Registo Pessoal (Estudante)\n"); // sinconizado
             System.out.println("0. Logout");
             System.out.print("Escolha: ");
 
@@ -260,6 +269,12 @@ public class ConsoleUI implements Runnable {
                     break;
                 case 2:
                     System.out.println("Funcionalidade ainda não implementada.");
+                    // handleViewMyAnswers(); // <-- NOVO HANDLER
+                    break;
+                case 3:
+                    System.out.println("Funcionalidade ainda não implementada.");
+                    handleEditProfileEstudante(); //
+
                     break;
                 case 0:
                     System.out.println("A fazer logout...");
@@ -435,20 +450,200 @@ public class ConsoleUI implements Runnable {
     private void handleDeleteQuestion() {
         System.out.println("\n--- Eliminar Pergunta ---");
         System.out.println("AVISO: Só pode eliminar perguntas que AINDA NÃO TENHAM RESPOSTAS.");
-        System.out.print("Insira o ID da pergunta a eliminar (pode ver o ID em 'Listar Perguntas'): ");
+        // ALTERAÇÃO AQUI: Pede o Código
+        System.out.print("Insira o CÓDIGO DE ACESSO da pergunta a eliminar: ");
 
         try {
-            int id = Integer.parseInt(scanner.nextLine());
+            String code = scanner.nextLine().trim().toUpperCase(); // ALTERAÇÃO AQUI
 
-            System.out.println("A tentar eliminar pergunta " + id + "...");
+            if (code.isEmpty()) {
+                System.err.println("Código inválido.");
+                return;
+            }
 
-            if (connection.deleteQuestion(id)) {
+            System.out.println("A tentar eliminar pergunta " + code + "...");
+
+            if (connection.deleteQuestion(code)) { // ALTERAÇÃO AQUI
                 System.out.println("Pergunta eliminada com sucesso.");
             } else {
-                System.err.println("Não foi possível eliminar a pergunta.");
+                System.err.println("Não foi possível eliminar a pergunta (Verifique se é sua e se não tem respostas).");
             }
-        } catch (NumberFormatException e) {
-            System.err.println("ID inválido.");
+        } catch (Exception e) { // Apanha outros erros
+            System.err.println("Erro: " + e.getMessage());
         }
     }
+
+
+    private void handleEditQuestion() {
+        System.out.println("\n--- Editar Pergunta ---");
+        System.out.println("AVISO: Só pode editar perguntas que AINDA NÃO TENHAM RESPOSTAS.");
+        System.out.print("Insira o CÓDIGO DE ACESSO da pergunta que quer editar: ");
+
+        String accessCode = scanner.nextLine().trim().toUpperCase();
+        if (accessCode.isEmpty()) {
+            System.err.println("Código inválido.");
+            return;
+        }
+
+        // Opcional: Podes primeiro ir buscar a pergunta (getQuestionByCode)
+        // para mostrar os dados atuais, mas vamos implementar a edição direta
+        // em que o utilizador tem de re-inserir tudo.
+
+        try {
+            System.out.println("--- Insira os NOVOS dados para a pergunta " + accessCode + " ---");
+
+            // 1. Recolher novos dados da Pergunta
+            System.out.print("Novo Enunciado: ");
+            String enunciado = scanner.nextLine();
+
+            // 2. Recolher Novas Opções
+            List<Option> options = new ArrayList<>();
+            System.out.print("Quantas opções? (Min 2): ");
+            int numOpcoes = Integer.parseInt(scanner.nextLine());
+            if (numOpcoes < 2) {
+                System.err.println("Uma pergunta deve ter pelo menos 2 opções.");
+                return;
+            }
+
+            char letra = 'a';
+            for (int i = 0; i < numOpcoes; i++) {
+                System.out.print("Texto da opção " + letra + ": ");
+                String textoOpcao = scanner.nextLine();
+                options.add(new Option(String.valueOf(letra), textoOpcao));
+                letra++;
+            }
+
+            System.out.print("Qual a nova opção correta? (ex: 'a'): ");
+            String respostaCerta = scanner.nextLine().trim().toLowerCase();
+
+            // 3. Recolher Novas Datas
+            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm");
+            System.out.print("Nova Data/Hora de Início (dd-MM-yyyy HH:mm): ");
+            LocalDateTime inicio = LocalDateTime.parse(scanner.nextLine(), formatter);
+            System.out.print("Nova Data/Hora de Fim (dd-MM-yyyy HH:mm): ");
+            LocalDateTime fim = LocalDateTime.parse(scanner.nextLine(), formatter);
+
+            if (fim.isBefore(inicio)) {
+                System.err.println("A data de fim não pode ser anterior à data de início.");
+                return;
+            }
+
+            // 4. Criar o objeto Question com os novos dados
+            Question newQuestionData = new Question(enunciado, inicio, fim, respostaCerta, options);
+
+            // 5. Chamar o componente de comunicação
+            System.out.println("A enviar dados de edição para o servidor...");
+            if (connection.editQuestion(accessCode, newQuestionData)) {
+                System.out.println("Pergunta editada com sucesso!");
+            } else {
+                System.err.println("Falha ao editar a pergunta (Verifique se é sua ou se já tem respostas).");
+            }
+
+        } catch (java.time.format.DateTimeParseException e) {
+            System.err.println("Formato de data inválido. Use dd-MM-yyyy HH:mm.");
+        } catch (NumberFormatException e) {
+            System.err.println("Número de opções inválido.");
+        } catch (Exception e) {
+            System.err.println("Ocorreu um erro inesperado: " + e.getMessage());
+        }
+    }
+
+    /**
+     * (Docente) Permite ao docente editar o seu próprio perfil
+     * (ex: nome, password).
+     */
+    private void handleEditProfileDocente() {
+        System.out.println("\n--- Editar Registo Pessoal (Docente) ---");
+        try {
+            Docente currentUser = (Docente) loggedInUser;
+
+            // 1. Pedir novos dados
+            System.out.print("Novo Nome (Atual: " + currentUser.getNome() + "): ");
+            String newName = scanner.nextLine();
+            System.out.print("Novo Email (Atual: " + currentUser.getEmail() + "): ");
+            String newEmail = scanner.nextLine();
+            System.out.print("Nova Password (Deixe em branco para não alterar): ");
+            String newPass1 = scanner.nextLine();
+            String newPass2 = "";
+            if (!newPass1.isEmpty()) {
+                System.out.print("Confirme a Nova Password: ");
+                newPass2 = scanner.nextLine();
+                if (!newPass1.equals(newPass2)) {
+                    System.err.println("As passwords não coincidem.");
+                    return;
+                }
+            }
+
+            // 2. Preencher os dados
+            // (Usamos "isEmpty" para que o utilizador possa manter o dado atual se carregar Enter)
+            String finalName = newName.isEmpty() ? currentUser.getNome() : newName;
+            String finalEmail = newEmail.isEmpty() ? currentUser.getEmail() : newEmail;
+
+            // 3. Criar o objeto Docente ATUALIZADO
+            Docente updatedDocente = new Docente(currentUser.getId(), finalName, finalEmail);
+
+            // 4. Chamar a Conexão
+            if (connection.updateProfileDocente(updatedDocente, newPass1)) {
+                System.out.println("Perfil atualizado com sucesso!");
+                this.loggedInUser = updatedDocente; // Atualiza o objeto local
+            } else {
+                System.err.println("Falha ao atualizar o perfil. (O email pode já estar em uso)");
+            }
+
+        } catch (Exception e) {
+            System.err.println("Erro inesperado: " + e.getMessage());
+        }
+    }
+
+
+    /**
+     * (Estudante) Permite ao estudante editar o seu próprio perfil
+     * (ex: nome, password).
+     */
+    private void handleEditProfileEstudante() {
+        System.out.println("\n--- Editar Registo Pessoal (Estudante) ---");
+        try {
+            Estudante currentUser = (Estudante) loggedInUser;
+
+            // 1. Pedir novos dados
+            System.out.print("Novo Nome (Atual: " + currentUser.getNome() + "): ");
+            String newName = scanner.nextLine();
+            System.out.print("Novo Email (Atual: " + currentUser.getEmail() + "): ");
+            String newEmail = scanner.nextLine();
+            System.out.print("Novo Número (Atual: " + currentUser.getStudentNumber() + "): ");
+            String newNumber = scanner.nextLine();
+            System.out.print("Nova Password (Deixe em branco para não alterar): ");
+            String newPass1 = scanner.nextLine();
+            String newPass2 = "";
+            if (!newPass1.isEmpty()) {
+                System.out.print("Confirme a Nova Password: ");
+                newPass2 = scanner.nextLine();
+                if (!newPass1.equals(newPass2)) {
+                    System.err.println("As passwords não coincidem.");
+                    return;
+                }
+            }
+
+            // 2. Preencher os dados
+            String finalName = newName.isEmpty() ? currentUser.getNome() : newName;
+            String finalEmail = newEmail.isEmpty() ? currentUser.getEmail() : newEmail;
+            String finalNumber = newNumber.isEmpty() ? currentUser.getStudentNumber() : newNumber;
+
+            // 3. Criar o objeto Estudante ATUALIZADO
+            Estudante updatedEstudante = new Estudante(currentUser.getId(), finalName, finalEmail, finalNumber);
+
+            // 4. Chamar a Conexão
+            if (connection.updateProfileEstudante(updatedEstudante, newPass1)) {
+                System.out.println("Perfil atualizado com sucesso!");
+                this.loggedInUser = updatedEstudante; // Atualiza o objeto local
+            } else {
+                System.err.println("Falha ao atualizar o perfil. (Email ou número podem já estar em uso)");
+            }
+
+        } catch (Exception e) {
+            System.err.println("Erro inesperado: " + e.getMessage());
+        }
+    }
+
+
 }

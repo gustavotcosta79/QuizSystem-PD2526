@@ -609,7 +609,8 @@ public class DatabaseManager {
         String sql = "SELECT * FROM Pergunta WHERE idDocente = ?";
 
         // Adicionamos os filtros de tempo
-        String now = "datetime('now', 'localtime')";
+        //String now = "datetime('now', 'localtime')"; BUGADO
+        String now = "strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime')";
         switch (filter.toUpperCase()) {
             case "ACTIVE": // Ativas: now ESTÁ entre inicio e fim
                 sql += " AND " + now + " BETWEEN dataHoraInicio AND dataHoraFim";
@@ -699,43 +700,196 @@ public class DatabaseManager {
      * Elimina uma pergunta, desde que não tenha respostas.
      * Retorna a query SQL (DELETE) para replicação, ou null se falhar.
      */
-    public String deleteQuestion(int idPergunta, int idDocente) {
+    public String deleteQuestion(String accessCode, int idDocente) {
         if (connection == null) return null;
 
-        // Query para verificar se a pergunta pertence ao docente E não tem respostas
-        // Usamos 'EXISTS' que é muito eficiente
-        String checkSql = "SELECT id FROM Pergunta WHERE id = ? AND idDocente = ? " +
+        // 1. Query SQL para enviar ao Backup (é mais simples)
+        String replicaSql = String.format("DELETE FROM Pergunta WHERE codigoAcesso = '%s'", accessCode);
+
+        // 2. Query SQL para executar localmente (inclui todas as regras de negócio)
+        String localDeleteSql = "DELETE FROM Pergunta " +
+                "WHERE codigoAcesso = ? AND idDocente = ? " +
                 "AND NOT EXISTS (SELECT 1 FROM Resposta WHERE Resposta.idPergunta = Pergunta.id)";
 
-        String deleteSql = String.format("DELETE FROM Pergunta WHERE id = %d", idPergunta);
+        try (PreparedStatement pstmt = connection.prepareStatement(localDeleteSql)) {
+            pstmt.setString(1, accessCode);
+            pstmt.setInt(2, idDocente);
 
-        try (PreparedStatement pstmtCheck = connection.prepareStatement(checkSql)) {
-            pstmtCheck.setInt(1, idPergunta);
-            pstmtCheck.setInt(2, idDocente);
+            int rowsAffected = pstmt.executeUpdate();
 
-            try (ResultSet rs = pstmtCheck.executeQuery()) {
-                if (!rs.next()) {
-                    // Se não encontrou, ou a pergunta não é dele, ou já tem respostas
-                    System.err.println("[DBManager] Falha ao eliminar: Pergunta não encontrada, não pertence ao docente, ou já tem respostas.");
-                    return null;
-                }
+            if (rowsAffected == 0) {
+                // Se 0 linhas foram afetadas, é porque uma das condições falhou:
+                // 1. O código não existe.
+                // 2. A pergunta não é deste docente.
+                // 3. A pergunta JÁ TEM respostas.
+                System.err.println("[DBManager] Falha ao eliminar: Pergunta não encontrada, não pertence ao docente, ou já tem respostas.");
+                return null; // Falha
             }
 
-            // Se chegou aqui, a verificação passou. Podemos apagar.
-            try (Statement stmt = connection.createStatement()) {
-                stmt.executeUpdate(deleteSql);
-                // NOTA: As opções são eliminadas automaticamente (ON DELETE CASCADE)
-
-                incrementDbVersion();
-                System.out.println("[DBManager] Pergunta " + idPergunta + " eliminada (v" + getDbVersion() + ")");
-                return deleteSql; // Sucesso: retorna a query
-            }
+            // Se chegou aqui (rowsAffected > 0), a eliminação foi bem-sucedida
+            incrementDbVersion();
+            System.out.println("[DBManager] Pergunta " + accessCode + " eliminada (v" + getDbVersion() + ")");
+            return replicaSql; // Sucesso: retorna a query de replicação
 
         } catch (SQLException e) {
             System.err.println("[DBManager] Erro ao eliminar pergunta: " + e.getMessage());
             return null;
         }
     }
+
+    /**
+     * Edita uma pergunta existente, substituindo todos os seus dados e opções.
+     * Falha se a pergunta não pertencer ao docente ou se já tiver respostas.
+     * Retorna o bloco SQL (Transação) para replicação, ou null se falhar.
+     */
+    public String editQuestion(String accessCode, Question newQuestion, int idDocente) {
+        if (connection == null) return null;
+
+        StringBuilder replicaSql = new StringBuilder(); // String para o backup
+        replicaSql.append("BEGIN TRANSACTION;");
+
+        // 1. Query para encontrar o ID da pergunta
+        String checkSql = "SELECT id FROM Pergunta WHERE codigoAcesso = ? AND idDocente = ? " +
+                "AND NOT EXISTS (SELECT 1 FROM Resposta WHERE Resposta.idPergunta = Pergunta.id)";
+        int idPergunta = -1;
+
+        try {
+            // --- Verificação ---
+            try (PreparedStatement pstmtCheck = connection.prepareStatement(checkSql)) {
+                pstmtCheck.setString(1, accessCode);
+                pstmtCheck.setInt(2, idDocente);
+                try (ResultSet rs = pstmtCheck.executeQuery()) {
+                    if (!rs.next()) {
+                        // Se não encontrou, é porque (código errado, não é dele, ou já tem respostas)
+                        System.err.println("[DBManager] Falha ao editar: Pergunta não encontrada, não pertence ao docente, ou já tem respostas.");
+                        return null;
+                    }
+                    idPergunta = rs.getInt("id");
+                }
+            }
+
+            // --- Se a verificação passou, preparamos a transação local ---
+            connection.setAutoCommit(false);
+
+            // 2. SQL de UPDATE para a Pergunta
+            String updatePerguntaSql = String.format("UPDATE Pergunta SET enunciado = '%s', dataHoraInicio = '%s', dataHoraFim = '%s', respostaCerta = '%s' WHERE id = %d;",
+                    newQuestion.getEnunciado(), newQuestion.getBeginDateHour().toString(),
+                    newQuestion.getEndDateHour().toString(), newQuestion.getCorrectAnswer(), idPergunta);
+
+            replicaSql.append(updatePerguntaSql);
+            try (Statement stmt = connection.createStatement()) {
+                stmt.executeUpdate(updatePerguntaSql);
+            }
+
+            // 3. SQL de DELETE para as Opções ANTIGAS
+            String deleteOpcoesSql = String.format("DELETE FROM Opcao WHERE idPergunta = %d;", idPergunta);
+            replicaSql.append(deleteOpcoesSql);
+            try (Statement stmt = connection.createStatement()) {
+                stmt.executeUpdate(deleteOpcoesSql);
+            }
+
+            // 4. SQL de INSERT para as Opções NOVAS
+            for (Option option : newQuestion.getOptions()) {
+                String insertOpcaoSql = String.format("INSERT INTO Opcao(idPergunta, letra, textoOpcao) VALUES (%d, '%s', '%s');",
+                        idPergunta, option.getLetter(), option.getTextOption());
+
+                replicaSql.append(insertOpcaoSql);
+                try (Statement stmt = connection.createStatement()) {
+                    stmt.executeUpdate(insertOpcaoSql);
+                }
+            }
+
+            // --- Fim da Transação ---
+            replicaSql.append("COMMIT;");
+            connection.commit(); // Confirma a transação local
+            incrementDbVersion();
+
+            System.out.println("[DBManager] Pergunta " + accessCode + " editada (v" + getDbVersion() + ")");
+            return replicaSql.toString(); // Sucesso: retorna o bloco SQL
+
+        } catch (SQLException e) {
+            try { connection.rollback(); } catch (SQLException ex) {} // Desfaz em caso de erro
+            System.err.println("[DBManager] Erro ao editar pergunta: " + e.getMessage());
+            return null;
+        } finally {
+            try { connection.setAutoCommit(true); } catch (SQLException ex) {} // Volta ao normal
+        }
+    }
+
+
+
+
+    /**
+     * Atualiza os dados de um Docente na BD.
+     * @param docente O objeto Docente com os novos dados (o ID deve estar correto).
+     * @param passwordHash O novo hash da password, ou null se a password não for alterada.
+     * @return A query SQL para replicação, ou null em caso de falha (ex: email duplicado).
+     */
+    public String updateDocente(Docente docente, String passwordHash) {
+        if (connection == null) return null;
+
+        // 1. Construir a query SQL
+        String sql = String.format("UPDATE Docente SET nome = '%s', email = '%s'",
+                docente.getNome(),
+                docente.getEmail()
+        );
+
+        // 2. Adicionar a password à query SÓ se foi fornecida uma nova
+        if (passwordHash != null && !passwordHash.isEmpty()) {
+            sql += String.format(", password = '%s'", passwordHash);
+        }
+
+        // 3. Adicionar a condição WHERE (MUITO IMPORTANTE)
+        sql += String.format(" WHERE id = %d", docente.getId());
+
+        // 4. Executar e replicar
+        try (Statement stmt = connection.createStatement()) {
+            stmt.executeUpdate(sql);
+            incrementDbVersion();
+            System.out.println("[DBManager] Docente atualizado (v" + getDbVersion() + "): " + docente.getEmail());
+            return sql; // Sucesso: retorna a query para o multicast
+        } catch (SQLException e) {
+            System.err.println("[DBManager] Erro ao atualizar docente: " + e.getMessage());
+            return null; // Falha (ex: email duplicado)
+        }
+    }
+
+    /**
+     * Atualiza os dados de um Estudante na BD.
+     * @param estudante O objeto Estudante com os novos dados (o ID deve estar correto).
+     * @param passwordHash O novo hash da password, ou null se a password não for alterada.
+     * @return A query SQL para replicação, ou null em caso de falha (ex: email/numero duplicado).
+     */
+    public String updateEstudante(Estudante estudante, String passwordHash) {
+        if (connection == null) return null;
+
+        // 1. Construir a query SQL
+        String sql = String.format("UPDATE Estudante SET nome = '%s', email = '%s', numero = '%s'",
+                estudante.getNome(),
+                estudante.getEmail(),
+                estudante.getStudentNumber()
+        );
+
+        // 2. Adicionar a password à query SÓ se foi fornecida uma nova
+        if (passwordHash != null && !passwordHash.isEmpty()) {
+            sql += String.format(", password = '%s'", passwordHash);
+        }
+
+        // 3. Adicionar a condição WHERE (MUITO IMPORTANTE)
+        sql += String.format(" WHERE id = %d", estudante.getId());
+
+        // 4. Executar e replicar
+        try (Statement stmt = connection.createStatement()) {
+            stmt.executeUpdate(sql);
+            incrementDbVersion();
+            System.out.println("[DBManager] Estudante atualizado (v" + getDbVersion() + "): " + estudante.getEmail());
+            return sql; // Sucesso: retorna a query para o multicast
+        } catch (SQLException e) {
+            System.err.println("[DBManager] Erro ao atualizar estudante: " + e.getMessage());
+            return null; // Falha (ex: email/numero duplicado)
+        }
+    }
+
 
 }
 

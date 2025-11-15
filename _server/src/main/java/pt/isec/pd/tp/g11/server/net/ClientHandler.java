@@ -91,6 +91,19 @@
                         case DELETE_QUESTION_REQUEST:
                             handleDeleteQuestion(mainRequest);
                             break;
+
+                        case EDIT_QUESTION_REQUEST:
+                            handleEditQuestion(mainRequest);
+                            break;
+
+                        case EDIT_PROFILE_DOCENTE_REQUEST:
+                            handleEditProfileDocente(mainRequest);
+                            break;
+
+                        case EDIT_PROFILE_ESTUDANTE_REQUEST:
+                            handleEditProfileEstudante(mainRequest);
+                            break;
+
                         // TODO: Adicionar outros cases (LIST_QUESTIONS, EDIT_QUESTION, etc.)
 
                         default:
@@ -390,16 +403,17 @@
                 out.writeObject(new TCPMessage(MessageType.DELETE_QUESTION_FAILED, "Apenas docentes."));
                 return;
             }
-            if (!(request.getPayload() instanceof Integer)) {
-                out.writeObject(new TCPMessage(MessageType.DELETE_QUESTION_FAILED, "Payload inválido (esperado ID)."));
+            // ALTERAÇÃO AQUI: Espera uma String, não um Integer
+            if (!(request.getPayload() instanceof String)) {
+                out.writeObject(new TCPMessage(MessageType.DELETE_QUESTION_FAILED, "Payload inválido (esperado Código de Acesso)."));
                 return;
             }
 
-            int idPergunta = (Integer) request.getPayload();
+            String accessCode = (String) request.getPayload(); // ALTERAÇÃO AQUI
             int idDocente = authenticatedUser.getId();
 
-            // 2. Tentar eliminar
-            String sqlQuery = dbManager.deleteQuestion(idPergunta, idDocente);
+            // 2. Tentar eliminar (passa o 'accessCode')
+            String sqlQuery = dbManager.deleteQuestion(accessCode, idDocente); // ALTERAÇÃO AQUI
 
             if (sqlQuery != null) {
                 // 3. Propagar para os Backups
@@ -408,9 +422,149 @@
 
                 // 4. Responder ao Cliente
                 out.writeObject(new TCPMessage(MessageType.DELETE_QUESTION_SUCCESS));
-                System.out.println("[ClientHandler] Pergunta " + idPergunta + " eliminada e propagada.");
+                System.out.println("[ClientHandler] Pergunta " + accessCode + " eliminada e propagada."); // Log atualizado
             } else {
                 out.writeObject(new TCPMessage(MessageType.DELETE_QUESTION_FAILED, "Erro: Pergunta não existe, não é sua, ou já tem respostas."));
+            }
+        }
+
+        // Em ClientHandler.java
+
+        private void handleEditQuestion(TCPMessage request) throws Exception {
+            // 1. Validar utilizador e payload
+            if (!(authenticatedUser instanceof Docente)) {
+                out.writeObject(new TCPMessage(MessageType.EDIT_QUESTION_FAILED, "Apenas docentes."));
+                return;
+            }
+            // Payload esperado: Object[] { String accessCode, Question newQuestionData }
+            if (!(request.getPayload() instanceof Object[]) || ((Object[]) request.getPayload()).length != 2) {
+                out.writeObject(new TCPMessage(MessageType.EDIT_QUESTION_FAILED, "Payload inválido."));
+                return;
+            }
+
+            Object[] payload = (Object[]) request.getPayload();
+            String accessCode = (String) payload[0];
+            Question newQuestionData = (Question) payload[1];
+            int idDocente = authenticatedUser.getId();
+
+            // 2. Tentar editar
+            String sqlQuery = dbManager.editQuestion(accessCode, newQuestionData, idDocente);
+
+            if (sqlQuery != null) {
+                // 3. Propagar para os Backups
+                int newVersion = dbManager.getDbVersion();
+                heartbeatService.sendUpdate(sqlQuery, newVersion); // Envia o bloco SQL
+
+                // 4. Responder ao Cliente
+                out.writeObject(new TCPMessage(MessageType.EDIT_QUESTION_SUCCESS));
+                System.out.println("[ClientHandler] Pergunta " + accessCode + " editada e propagada.");
+            } else {
+                out.writeObject(new TCPMessage(MessageType.EDIT_QUESTION_FAILED, "Erro: Pergunta não existe, não é sua, ou já tem respostas."));
+            }
+        }
+
+        /**
+         * Trata de um pedido de um Docente para atualizar o seu perfil.
+         */
+        private void handleEditProfileDocente(TCPMessage request) throws Exception {
+            // 1. Validar o utilizador (só um Docente pode editar um Docente)
+            if (!(authenticatedUser instanceof Docente)) {
+                out.writeObject(new TCPMessage(MessageType.EDIT_PROFILE_DOCENTE_FAILED, "Acesso negado."));
+                return;
+            }
+
+            // 2. Validar o payload: Object[] { Docente, String newPassword }
+            if (!(request.getPayload() instanceof Object[] payload) || payload.length != 2 ||
+                    !(payload[0] instanceof Docente) || !(payload[1] instanceof String)) {
+                out.writeObject(new TCPMessage(MessageType.EDIT_PROFILE_DOCENTE_FAILED, "Payload inválido."));
+                return;
+            }
+
+            Docente updatedDocente = (Docente) payload[0];
+            String newPassword = (String) payload[1];
+
+            // 3. VERIFICAÇÃO DE SEGURANÇA CRÍTICA:
+            // O utilizador só pode editar o seu PRÓPRIO perfil.
+            if (updatedDocente.getId() != authenticatedUser.getId()) {
+                out.writeObject(new TCPMessage(MessageType.EDIT_PROFILE_DOCENTE_FAILED, "Não pode editar o perfil de outro utilizador."));
+                return;
+            }
+
+            // 4. Fazer o Hash da nova password (se existir)
+            String passwordHash = null;
+            if (newPassword != null && !newPassword.isEmpty()) {
+                passwordHash = SecurityUtils.hashPassword(newPassword);
+            }
+
+            // 5. Chamar o DBManager
+            String sqlQuery = dbManager.updateDocente(updatedDocente, passwordHash);
+
+            // 6. Processar o resultado e sincronizar
+            if (sqlQuery != null) {
+                // 6.1. Enviar Multicast
+                int newVersion = dbManager.getDbVersion();
+                heartbeatService.sendUpdate(sqlQuery, newVersion);
+
+                // 6.2. Responder ao Cliente
+                out.writeObject(new TCPMessage(MessageType.EDIT_PROFILE_DOCENTE_SUCCESS));
+
+                // 6.3. Atualizar o objeto de sessão local
+                this.authenticatedUser = updatedDocente;
+                System.out.println("[ClientHandler] Docente " + updatedDocente.getEmail() + " atualizou o perfil.");
+            } else {
+                out.writeObject(new TCPMessage(MessageType.EDIT_PROFILE_DOCENTE_FAILED, "Erro: Email pode já estar em uso."));
+            }
+        }
+
+        /**
+         * Trata de um pedido de um Estudante para atualizar o seu perfil.
+         */
+        private void handleEditProfileEstudante(TCPMessage request) throws Exception {
+            // 1. Validar o utilizador (só um Estudante pode editar um Estudante)
+            if (!(authenticatedUser instanceof Estudante)) {
+                out.writeObject(new TCPMessage(MessageType.EDIT_PROFILE_ESTUDANTE_FAILED, "Acesso negado."));
+                return;
+            }
+
+            // 2. Validar o payload: Object[] { Estudante, String newPassword }
+            if (!(request.getPayload() instanceof Object[] payload) || payload.length != 2 ||
+                    !(payload[0] instanceof Estudante) || !(payload[1] instanceof String)) {
+                out.writeObject(new TCPMessage(MessageType.EDIT_PROFILE_ESTUDANTE_FAILED, "Payload inválido."));
+                return;
+            }
+
+            Estudante updatedEstudante = (Estudante) payload[0];
+            String newPassword = (String) payload[1];
+
+            // 3. VERIFICAÇÃO DE SEGURANÇA CRÍTICA:
+            if (updatedEstudante.getId() != authenticatedUser.getId()) {
+                out.writeObject(new TCPMessage(MessageType.EDIT_PROFILE_ESTUDANTE_FAILED, "Não pode editar o perfil de outro utilizador."));
+                return;
+            }
+
+            // 4. Fazer o Hash da nova password (se existir)
+            String passwordHash = null;
+            if (newPassword != null && !newPassword.isEmpty()) {
+                passwordHash = SecurityUtils.hashPassword(newPassword);
+            }
+
+            // 5. Chamar o DBManager
+            String sqlQuery = dbManager.updateEstudante(updatedEstudante, passwordHash);
+
+            // 6. Processar o resultado e sincronizar
+            if (sqlQuery != null) {
+                // 6.1. Enviar Multicast
+                int newVersion = dbManager.getDbVersion();
+                heartbeatService.sendUpdate(sqlQuery, newVersion);
+
+                // 6.2. Responder ao Cliente
+                out.writeObject(new TCPMessage(MessageType.EDIT_PROFILE_ESTUDANTE_SUCCESS));
+
+                // 6.3. Atualizar o objeto de sessão local
+                this.authenticatedUser = updatedEstudante;
+                System.out.println("[ClientHandler] Estudante " + updatedEstudante.getEmail() + " atualizou o perfil.");
+            } else {
+                out.writeObject(new TCPMessage(MessageType.EDIT_PROFILE_ESTUDANTE_FAILED, "Erro: Email ou número de estudante podem já estar em uso."));
             }
         }
 

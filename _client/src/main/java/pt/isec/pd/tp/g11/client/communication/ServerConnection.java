@@ -429,11 +429,12 @@ public class ServerConnection {
         return null; // Falha
     }
 
-    public boolean deleteQuestion(int idPergunta) {
+    public boolean deleteQuestion(String accessCode) {
         if (tcpSocket == null || tcpSocket.isClosed()) return false;
 
         try {
-            TCPMessage request = new TCPMessage(MessageType.DELETE_QUESTION_REQUEST, idPergunta);
+            // ALTERAÇÃO AQUI (envia o 'accessCode' como payload)
+            TCPMessage request = new TCPMessage(MessageType.DELETE_QUESTION_REQUEST, accessCode);
             out.writeObject(request);
             out.flush();
 
@@ -453,7 +454,100 @@ public class ServerConnection {
         }
     }
 
+    // Em ServerConnection.java
 
+    public boolean editQuestion(String accessCode, Question newQuestionData) {
+        if (tcpSocket == null || tcpSocket.isClosed()) return false;
+
+        try {
+            // Prepara o payload
+            Object[] payload = { accessCode, newQuestionData };
+
+            TCPMessage request = new TCPMessage(MessageType.EDIT_QUESTION_REQUEST, payload);
+            out.writeObject(request);
+            out.flush();
+
+            TCPMessage response = (TCPMessage) in.readObject();
+
+            if (response.getType() == MessageType.EDIT_QUESTION_SUCCESS) {
+                return true;
+            } else {
+                String errorMsg = (response.getPayload() instanceof String) ? (String) response.getPayload() : "Erro.";
+                System.err.println("[Comunicação] Falha ao editar: " + errorMsg);
+                return false;
+            }
+        } catch (Exception e) {
+            System.err.println("[Comunicação] Erro crítico ao editar: " + e.getMessage());
+            // TODO: Aqui entrará o failover
+            return false;
+        }
+    }
+
+
+
+    /**
+     * Envia um pedido de atualização de perfil para um Docente.
+     * @param docente O objeto Docente com os dados ATUALIZADOS.
+     * @param newPassword A nova password (em texto simples), ou "" se não quiser mudar.
+     * @return true se for bem-sucedido, false caso contrário.
+     */
+    public boolean updateProfileDocente(Docente docente, String newPassword) {
+        if (tcpSocket == null || tcpSocket.isClosed()) return false;
+
+        try {
+            // Payload: Object[] { Docente atualizado, String newPassword }
+            Object[] payload = { docente, newPassword };
+            TCPMessage request = new TCPMessage(MessageType.EDIT_PROFILE_DOCENTE_REQUEST, payload);
+
+            out.writeObject(request);
+            out.flush();
+
+            TCPMessage response = (TCPMessage) in.readObject();
+
+            if (response.getType() == MessageType.EDIT_PROFILE_DOCENTE_SUCCESS) {
+                return true;
+            } else {
+                String errorMsg = (response.getPayload() instanceof String) ? (String) response.getPayload() : "Erro.";
+                System.err.println("[Comunicação] Falha ao atualizar perfil: " + errorMsg);
+                return false;
+            }
+        } catch (Exception e) {
+            System.err.println("[Comunicação] Erro crítico ao atualizar perfil: " + e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Envia um pedido de atualização de perfil para um Estudante.
+     * @param estudante O objeto Estudante com os dados ATUALIZADOS.
+     * @param newPassword A nova password (em texto simples), ou "" se não quiser mudar.
+     * @return true se for bem-sucedido, false caso contrário.
+     */
+    public boolean updateProfileEstudante(Estudante estudante, String newPassword) {
+        if (tcpSocket == null || tcpSocket.isClosed()) return false;
+
+        try {
+            // Payload: Object[] { Estudante atualizado, String newPassword }
+            Object[] payload = { estudante, newPassword };
+            TCPMessage request = new TCPMessage(MessageType.EDIT_PROFILE_ESTUDANTE_REQUEST, payload);
+
+            out.writeObject(request);
+            out.flush();
+
+            TCPMessage response = (TCPMessage) in.readObject();
+
+            if (response.getType() == MessageType.EDIT_PROFILE_ESTUDANTE_SUCCESS) {
+                return true;
+            } else {
+                String errorMsg = (response.getPayload() instanceof String) ? (String) response.getPayload() : "Erro.";
+                System.err.println("[Comunicação] Falha ao atualizar perfil: " + errorMsg);
+                return false;
+            }
+        } catch (Exception e) {
+            System.err.println("[Comunicação] Erro crítico ao atualizar perfil: " + e.getMessage());
+            return false;
+        }
+    }
     // TODO: Métodos futuros que a Vista irá chamar
     /*
     public User login(String email, String password) {
