@@ -1,11 +1,7 @@
 package pt.isec.pd.tp.g11.client.view;
 
 import pt.isec.pd.tp.g11.client.communication.ServerConnection;
-import pt.isec.pd.tp.g11.common.model.Docente;
-import pt.isec.pd.tp.g11.common.model.Estudante;
-import pt.isec.pd.tp.g11.common.model.User;
-import pt.isec.pd.tp.g11.common.model.Option;
-import pt.isec.pd.tp.g11.common.model.Question;
+import pt.isec.pd.tp.g11.common.model.*;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -226,13 +222,10 @@ public class ConsoleUI implements Runnable {
                     handleDeleteQuestion();
                     break;
                 case 5:
-                    //...();
-                    System.out.println("Nao implementado!");
+                    handleViewQuestionResults();
                     break;
                 case 6:
-                    System.out.println("Nao implementado!");
                     handleEditProfileDocente();
-                    //handleEditProfileDocente(); //
                     break;
                 case 0:
                     System.out.println("A fazer logout...");
@@ -254,7 +247,7 @@ public class ConsoleUI implements Runnable {
         do {
             System.out.println("\n--- Menu Estudante (" + loggedInUser.getNome() + ") ---");
             System.out.println("1. Responder a Pergunta"); // Esta sincronizado
-            System.out.println("2. Ver Respostas Submetidas (TODO)"); //(leitura)
+            System.out.println("2. Ver Respostas Submetidas"); //(leitura)
             System.out.println("3. Editar Registo Pessoal (Estudante)\n"); // sinconizado
             System.out.println("0. Logout");
             System.out.print("Escolha: ");
@@ -268,13 +261,11 @@ public class ConsoleUI implements Runnable {
                     handleAnswerQuestion(); // <<< CHAMAR O NOVO MÉTODO
                     break;
                 case 2:
-                    System.out.println("Funcionalidade ainda não implementada.");
-                    // handleViewMyAnswers(); // <-- NOVO HANDLER
+
+                     handleViewMyAnswers();
                     break;
                 case 3:
-                    System.out.println("Funcionalidade ainda não implementada.");
                     handleEditProfileEstudante(); //
-
                     break;
                 case 0:
                     System.out.println("A fazer logout...");
@@ -645,5 +636,121 @@ public class ConsoleUI implements Runnable {
         }
     }
 
+    /**
+     * Pede e exibe o histórico de respostas do estudante.
+     */
+    private void handleViewMyAnswers() {
+        System.out.println("\n--- O Meu Histórico de Respostas (Perguntas Expiradas) ---");
+
+        List<SubmittedAnswer> answers = connection.getMyAnswers();
+
+        if (answers == null) {
+            System.err.println("Erro ao obter o histórico do servidor.");
+            return;
+        }
+        if (answers.isEmpty()) {
+            System.out.println("Ainda não respondeu a nenhuma pergunta (ou as perguntas a que respondeu ainda não expiraram).");
+            return;
+        }
+
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
+
+        for (SubmittedAnswer ans : answers) {
+            System.out.println("---------------------------------");
+            System.out.println(" Pergunta: " + ans.getQuestionEnunciado());
+            System.out.println(" A sua Resposta: " + ans.getMyAnswer().toUpperCase());
+            System.out.println(" Resposta Certa: " + ans.getCorrectAnswer().toUpperCase());
+            System.out.println(" Resultado: " + (ans.isCorrect() ? "-->CORRETA" : "-->ERRADA"));
+            System.out.println(" Submetida em: " + ans.getSubmissionTime().format(formatter));
+        }
+        System.out.println("---------------------------------");
+    }
+
+    // Adiciona estes métodos ao ficheiro ConsoleUI.java
+
+    /**
+     * Pede o código de uma pergunta e exibe os resultados e estatísticas.
+     * Oferece a opção de exportar para CSV.
+     */
+    private void handleViewQuestionResults() {
+        System.out.println("\n--- Ver Resultados de Pergunta Expirada ---");
+        System.out.print("Insira o CÓDIGO DE ACESSO da pergunta expirada: ");
+        String accessCode = scanner.nextLine().trim().toUpperCase();
+
+        if (accessCode.isEmpty()) {
+            System.err.println("Código inválido.");
+            return;
+        }
+
+        // 1. Obter os dados do servidor
+        List<QuestionResult> results = connection.getQuestionResults(accessCode);
+
+        if (results == null) {
+            System.err.println("Erro ao obter resultados do servidor.");
+            return;
+        }
+        if (results.isEmpty()) {
+            System.out.println("Nenhum resultado encontrado. (A pergunta pode não existir, não ser sua, não ter expirado, ou ninguém respondeu).");
+            return;
+        }
+
+        // 2. Mostrar Estatísticas (Requisito do enunciado)
+        System.out.println("\n--- Estatísticas para " + accessCode + " ---");
+        System.out.println("Total de Respostas: " + results.size());
+
+        // Precisamos da resposta certa (teríamos de a ir buscar... por agora fica TODO)
+        // Para calcular a % de certas, precisaríamos de outro DTO que incluísse a resposta certa.
+        // Vamos focar-nos na listagem primeiro.
+
+        System.out.println("\n--- Lista de Respostas ---");
+        System.out.printf("%-10s | %-25s | %-20s | %s\n", "Número", "Nome", "Email", "Resposta");
+        System.out.println("--------------------------------------------------------------------------");
+        for (QuestionResult res : results) {
+            System.out.printf("%-10s | %-25s | %-20s | %s\n",
+                    res.getStudentNumber(),
+                    res.getStudentName(),
+                    res.getStudentEmail(),
+                    res.getAnswerGiven().toUpperCase());
+        }
+        System.out.println("--------------------------------------------------------------------------");
+
+        // 3. Opção de Exportar CSV (Requisito do enunciado)
+        System.out.print("\nDeseja exportar estes resultados para um ficheiro CSV? (s/n): ");
+        String choice = scanner.nextLine().trim().toLowerCase();
+        if (choice.equals("s")) {
+            generateCSV(accessCode, results);
+        }
+    }
+
+    /**
+     * Gera um ficheiro CSV com os resultados.
+     */
+    private void generateCSV(String accessCode, List<QuestionResult> results) {
+        // Precisamos de 'java.io.FileWriter' e 'java.io.PrintWriter'
+        String fileName = "resultados_" + accessCode + ".csv";
+
+        try (java.io.PrintWriter writer = new java.io.PrintWriter(new java.io.FileWriter(fileName))) {
+
+            // Cabeçalho (conforme Figura 1 do enunciado)
+            // (Para ser 100% igual ao enunciado, precisaríamos dos dados da pergunta,
+            // que não estamos a ir buscar para já. Vamos simplificar.)
+
+            writer.println("numero de estudante;nome;e-mail;resposta");
+
+            // Dados
+            for (QuestionResult res : results) {
+                writer.printf("%s;%s;%s;%s\n",
+                        res.getStudentNumber(),
+                        res.getStudentName(),
+                        res.getStudentEmail(),
+                        res.getAnswerGiven());
+            }
+
+            System.out.println("Ficheiro '" + fileName + "' gerado com sucesso na pasta do projeto.");
+
+        } catch (java.io.IOException e) {
+            System.err.println("Erro ao gerar o ficheiro CSV: " + e.getMessage());
+        }
+    }
 
 }

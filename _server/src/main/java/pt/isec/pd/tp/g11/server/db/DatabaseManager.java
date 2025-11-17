@@ -13,6 +13,7 @@ import java.sql.ResultSet;
 import java.io.File;
 import java.sql.*;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -890,6 +891,85 @@ public class DatabaseManager {
         }
     }
 
+    /**
+     * Obtém o histórico de respostas de um estudante para perguntas que já expiraram.
+     */
+    public List<SubmittedAnswer> getSubmittedAnswers(int idEstudante) {
+        if (connection == null) return new ArrayList<>();
+
+        List<SubmittedAnswer> answers = new ArrayList<>();
+
+        // Query que junta Resposta e Pergunta
+        String sql = "SELECT P.enunciado, R.respostaSubmetida, P.respostaCerta, R.dataHoraSubmissao " +
+                "FROM Resposta R " +
+                "JOIN Pergunta P ON R.idPergunta = P.id " +
+                "WHERE R.idEstudante = ? " +
+                "AND strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime') > P.dataHoraFim " + // Onde a pergunta já expirou
+                "ORDER BY R.dataHoraSubmissao DESC"; // Mais recentes primeiro
+
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+            pstmt.setInt(1, idEstudante);
+
+            DateTimeFormatter sqliteFormatter =
+                    DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+
+            try (ResultSet rs = pstmt.executeQuery()) {
+                while (rs.next()) {
+                    String enunciado = rs.getString("enunciado");
+                    String yourAnswer = rs.getString("respostaSubmetida");
+                    String correctAnswer = rs.getString("respostaCerta");
+                    LocalDateTime time = LocalDateTime.parse(rs.getString("dataHoraSubmissao"),sqliteFormatter);
+
+                    answers.add(new SubmittedAnswer(enunciado, yourAnswer, correctAnswer, time));
+                }
+            }
+        } catch (SQLException e) {
+            System.err.println("[DBManager] Erro ao obter histórico de respostas: " + e.getMessage());
+        }
+        return answers;
+    }
+
+    /**
+     * Obtém a lista de todos os resultados (respostas de estudantes) para uma pergunta.
+     * Apenas funciona se a pergunta pertence ao docente e já expirou.
+     */
+    public List<QuestionResult> getQuestionResults(String accessCode, int idDocente) {
+        if (connection == null) return new ArrayList<>();
+
+        List<QuestionResult> results = new ArrayList<>();
+
+        // Query complexa que:
+        // 1. Junta Resposta (R) e Estudante (E)
+        // 2. Filtra pela Pergunta (P) correta usando o accessCode
+        // 3. Verifica se a pergunta pertence ao docente (P.idDocente = ?)
+        // 4. Verifica se a pergunta já expirou (now > P.dataHoraFim)
+        String sql = "SELECT E.numero, E.nome, E.email, R.respostaSubmetida " +
+                "FROM Resposta R " +
+                "JOIN Estudante E ON R.idEstudante = E.id " +
+                "JOIN Pergunta P ON R.idPergunta = P.id " +
+                "WHERE P.codigoAcesso = ? AND P.idDocente = ? " +
+                "AND strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime') > P.dataHoraFim " +
+                "ORDER BY E.nome ASC"; // Ordena por nome de aluno
+
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+            pstmt.setString(1, accessCode);
+            pstmt.setInt(2, idDocente);
+
+            try (ResultSet rs = pstmt.executeQuery()) {
+                while (rs.next()) {
+                    String numero = rs.getString("numero");
+                    String nome = rs.getString("nome");
+                    String email = rs.getString("email");
+                    String resposta = rs.getString("respostaSubmetida");
+
+                    results.add(new QuestionResult(numero, nome, email, resposta));
+                }
+            }
+        } catch (SQLException e) {
+            System.err.println("[DBManager] Erro ao obter resultados da pergunta: " + e.getMessage());
+        }
+        return results; // Retorna a lista (pode estar vazia se ninguém respondeu ou se a pergunta não é válida)
+    }
 
 }
 

@@ -104,6 +104,14 @@
                             handleEditProfileEstudante(mainRequest);
                             break;
 
+                        case GET_MY_ANSWERS_REQUEST:
+                            handleGetMyAnswers(mainRequest);
+                            break;
+
+                        case GET_QUESTION_RESULTS_REQUEST:
+                            handleGetQuestionResults(mainRequest);
+                            break;
+
                         // TODO: Adicionar outros cases (LIST_QUESTIONS, EDIT_QUESTION, etc.)
 
                         default:
@@ -568,6 +576,49 @@
             }
         }
 
+        /**
+         * Trata de um pedido de um estudante para ver o seu histórico de respostas.
+         */
+        private void handleGetMyAnswers(TCPMessage request) throws Exception {
+            // 1. Validar utilizador
+            if (!(authenticatedUser instanceof Estudante)) {
+                out.writeObject(new TCPMessage(MessageType.GET_MY_ANSWERS_FAILED, "Apenas estudantes."));
+                return;
+            }
+
+            // 2. Chamar o DBManager (não precisa de payload, usa o ID da sessão)
+            int idEstudante = authenticatedUser.getId();
+            List<SubmittedAnswer> answers = dbManager.getSubmittedAnswers(idEstudante);
+
+            // 3. Enviar a resposta (é sempre sucesso, mesmo que a lista esteja vazia)
+            // O List<SubmittedAnswer> é Serializable
+            out.writeObject(new TCPMessage(MessageType.GET_MY_ANSWERS_SUCCESS, (java.io.Serializable) answers));
+        }
+
+        /**
+         * Trata de um pedido de um docente para ver os resultados de uma pergunta expirada.
+         */
+        private void handleGetQuestionResults(TCPMessage request) throws Exception {
+            // 1. Validar utilizador
+            if (!(authenticatedUser instanceof Docente)) {
+                out.writeObject(new TCPMessage(MessageType.GET_QUESTION_RESULTS_FAILED, "Apenas docentes."));
+                return;
+            }
+            // 2. Validar payload (String accessCode)
+            if (!(request.getPayload() instanceof String)) {
+                out.writeObject(new TCPMessage(MessageType.GET_QUESTION_RESULTS_FAILED, "Payload inválido (esperado Código de Acesso)."));
+                return;
+            }
+
+            String accessCode = (String) request.getPayload();
+            int idDocente = authenticatedUser.getId();
+
+            // 3. Chamar o DBManager
+            List<QuestionResult> results = dbManager.getQuestionResults(accessCode, idDocente);
+
+            // 4. Enviar a resposta (é sempre sucesso, mesmo que a lista esteja vazia)
+            out.writeObject(new TCPMessage(MessageType.GET_QUESTION_RESULTS_SUCCESS, (java.io.Serializable) results));
+        }
 
         // TODO: Implementar  e handleRegisterDocente
         // TODO: Implementar handleAuthenticatedRequest (o switch principal para utilizadores logados)

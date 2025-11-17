@@ -548,6 +548,69 @@ public class ServerConnection {
             return false;
         }
     }
+
+    /**
+     * Pede ao servidor o histórico de respostas submetidas pelo utilizador logado.
+     */
+    public List<SubmittedAnswer> getMyAnswers() {
+        if (tcpSocket == null || tcpSocket.isClosed()) return null;
+
+        try {
+            // 1. Enviar pedido (sem payload)
+            TCPMessage request = new TCPMessage(MessageType.GET_MY_ANSWERS_REQUEST);
+            out.writeObject(request);
+            out.flush();
+
+            // 2. Esperar resposta
+            TCPMessage response = (TCPMessage) in.readObject();
+
+            // 3. Processar resposta
+            if (response.getType() == MessageType.GET_MY_ANSWERS_SUCCESS) {
+                if (response.getPayload() instanceof List) {
+                    return (List<SubmittedAnswer>) response.getPayload(); // SUCESSO!
+                }
+            } else {
+                String errorMsg = (response.getPayload() instanceof String) ? (String) response.getPayload() : "Erro.";
+                System.err.println("[Comunicação] Falha ao obter histórico: " + errorMsg);
+            }
+        } catch (Exception e) {
+            System.err.println("[Comunicação] Erro crítico ao obter histórico: " + e.getMessage());
+            // TODO: Adicionar failover aqui
+        }
+        return null; // Falha
+    }
+
+    /**
+     * Pede ao servidor a lista de resultados de uma pergunta (respostas dos alunos).
+     */
+    public List<QuestionResult> getQuestionResults(String accessCode) {
+        if (tcpSocket == null || tcpSocket.isClosed()) return null;
+
+        try {
+            // 1. Enviar pedido
+            TCPMessage request = new TCPMessage(MessageType.GET_QUESTION_RESULTS_REQUEST, accessCode);
+            out.writeObject(request);
+            out.flush();
+
+            // 2. Esperar resposta
+            TCPMessage response = (TCPMessage) in.readObject();
+
+            // 3. Processar resposta
+            if (response.getType() == MessageType.GET_QUESTION_RESULTS_SUCCESS) {
+                if (response.getPayload() instanceof List) {
+                    return (List<QuestionResult>) response.getPayload(); // SUCESSO!
+                }
+            } else {
+                String errorMsg = (response.getPayload() instanceof String) ? (String) response.getPayload() : "Erro.";
+                System.err.println("[Comunicação] Falha ao obter resultados: " + errorMsg);
+            }
+        } catch (Exception e) {
+            System.err.println("[Comunicação] Erro crítico ao obter resultados: " + e.getMessage());
+            // TODO: Adicionar failover aqui
+        }
+        return null; // Falha
+    }
+
     // TODO: Métodos futuros que a Vista irá chamar
     /*
     public User login(String email, String password) {
