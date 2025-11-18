@@ -3,6 +3,8 @@ package pt.isec.pd.tp.g11.client.view;
 import pt.isec.pd.tp.g11.client.communication.ServerConnection;
 import pt.isec.pd.tp.g11.common.model.*;
 
+import java.io.FileWriter;
+import java.io.PrintWriter;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -729,7 +731,7 @@ public class ConsoleUI implements Runnable {
         // Precisamos de 'java.io.FileWriter' e 'java.io.PrintWriter'
         String fileName = "resultados_" + accessCode + ".csv";
 
-        try (java.io.PrintWriter writer = new java.io.PrintWriter(new java.io.FileWriter(fileName))) {
+        try (PrintWriter writer = new PrintWriter(new FileWriter(fileName))) {
 
             // Cabeçalho (conforme Figura 1 do enunciado)
             // (Para ser 100% igual ao enunciado, precisaríamos dos dados da pergunta,
@@ -737,7 +739,7 @@ public class ConsoleUI implements Runnable {
 
             writer.println("numero de estudante;nome;e-mail;resposta");
 
-            // Dados
+            // Dados    
             for (QuestionResult res : results) {
                 writer.printf("%s;%s;%s;%s\n",
                         res.getStudentNumber(),
