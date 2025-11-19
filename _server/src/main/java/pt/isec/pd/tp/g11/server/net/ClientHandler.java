@@ -599,25 +599,31 @@
          * Trata de um pedido de um docente para ver os resultados de uma pergunta expirada.
          */
         private void handleGetQuestionResults(TCPMessage request) throws Exception {
-            // 1. Validar utilizador
             if (!(authenticatedUser instanceof Docente)) {
                 out.writeObject(new TCPMessage(MessageType.GET_QUESTION_RESULTS_FAILED, "Apenas docentes."));
-                return;
-            }
-            // 2. Validar payload (String accessCode)
-            if (!(request.getPayload() instanceof String)) {
-                out.writeObject(new TCPMessage(MessageType.GET_QUESTION_RESULTS_FAILED, "Payload inválido (esperado Código de Acesso)."));
                 return;
             }
 
             String accessCode = (String) request.getPayload();
             int idDocente = authenticatedUser.getId();
 
-            // 3. Chamar o DBManager
+            // 1. Buscar a Pergunta (Detalhes para o cabeçalho do CSV)
+            Question question = dbManager.getQuestionDetails(accessCode);
+
+            // 2. Validar se a pergunta existe e pertence ao docente
+            if (question == null || question.getIdDocente() != idDocente) {
+                out.writeObject(new TCPMessage(MessageType.GET_QUESTION_RESULTS_FAILED, "Pergunta não encontrada ou não lhe pertence."));
+                return;
+            }
+
+            // 3. Buscar a Lista de Resultados (Respostas dos alunos)
             List<QuestionResult> results = dbManager.getQuestionResults(accessCode, idDocente);
 
-            // 4. Enviar a resposta (é sempre sucesso, mesmo que a lista esteja vazia)
-            out.writeObject(new TCPMessage(MessageType.GET_QUESTION_RESULTS_SUCCESS, (java.io.Serializable) results));
+            // 4. EMPACOTAR TUDO: Enviar Object[] { Question, List<QuestionResult> }
+            // Reutilizamos o tipo GET_QUESTION_RESULTS_SUCCESS
+            Object[] responsePayload = new Object[]{ question, results };
+
+            out.writeObject(new TCPMessage(MessageType.GET_QUESTION_RESULTS_SUCCESS, responsePayload));
         }
 
         // TODO: Implementar  e handleRegisterDocente

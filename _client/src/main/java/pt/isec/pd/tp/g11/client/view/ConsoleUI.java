@@ -675,83 +675,90 @@ public class ConsoleUI implements Runnable {
      * Oferece a opção de exportar para CSV.
      */
     private void handleViewQuestionResults() {
-        System.out.println("\n--- Ver Resultados de Pergunta Expirada ---");
-        System.out.print("Insira o CÓDIGO DE ACESSO da pergunta expirada: ");
+        System.out.println("\n--- Ver Resultados e Exportar CSV ---");
+        System.out.print("Insira o CÓDIGO DE ACESSO: ");
         String accessCode = scanner.nextLine().trim().toUpperCase();
+        if (accessCode.isEmpty()) return;
 
-        if (accessCode.isEmpty()) {
-            System.err.println("Código inválido.");
+        // Chamada ÚNICA ao servidor
+        ServerConnection.QuestionFullReport report = connection.getQuestionResults(accessCode);
+
+        if (report == null) {
+            System.err.println("Erro: Pergunta não encontrada ou sem permissão.");
             return;
         }
 
-        // 1. Obter os dados do servidor
-        List<QuestionResult> results = connection.getQuestionResults(accessCode);
+        Question q = report.question;
+        List<QuestionResult> list = report.results;
 
-        if (results == null) {
-            System.err.println("Erro ao obter resultados do servidor.");
-            return;
+        // Mostrar Resumo
+        System.out.println("\n--- Dados da Pergunta ---");
+        System.out.println("Enunciado: " + q.getEnunciado());
+        System.out.println("Opção Correta: " + q.getCorrectAnswer().toUpperCase());
+        System.out.println("Total de Respostas: " + list.size());
+
+        // Tabela Simples na Consola
+        System.out.printf("\n%-10s | %-20s | %s\n", "Número", "Aluno", "Resposta");
+        for(QuestionResult res : list) {
+            System.out.printf("%-10s | %-20s | %s\n",
+                    res.getStudentNumber(), res.getStudentName(), res.getAnswerGiven().toUpperCase());
         }
-        if (results.isEmpty()) {
-            System.out.println("Nenhum resultado encontrado. (A pergunta pode não existir, não ser sua, não ter expirado, ou ninguém respondeu).");
-            return;
-        }
 
-        // 2. Mostrar Estatísticas (Requisito do enunciado)
-        System.out.println("\n--- Estatísticas para " + accessCode + " ---");
-        System.out.println("Total de Respostas: " + results.size());
-
-        // Precisamos da resposta certa (teríamos de a ir buscar... por agora fica TODO)
-        // Para calcular a % de certas, precisaríamos de outro DTO que incluísse a resposta certa.
-        // Vamos focar-nos na listagem primeiro.
-
-        System.out.println("\n--- Lista de Respostas ---");
-        System.out.printf("%-10s | %-25s | %-20s | %s\n", "Número", "Nome", "Email", "Resposta");
-        System.out.println("--------------------------------------------------------------------------");
-        for (QuestionResult res : results) {
-            System.out.printf("%-10s | %-25s | %-20s | %s\n",
-                    res.getStudentNumber(),
-                    res.getStudentName(),
-                    res.getStudentEmail(),
-                    res.getAnswerGiven().toUpperCase());
-        }
-        System.out.println("--------------------------------------------------------------------------");
-
-        // 3. Opção de Exportar CSV (Requisito do enunciado)
-        System.out.print("\nDeseja exportar estes resultados para um ficheiro CSV? (s/n): ");
-        String choice = scanner.nextLine().trim().toLowerCase();
-        if (choice.equals("s")) {
-            generateCSV(accessCode, results);
+        // Gerar CSV
+        System.out.print("\nGerar CSV? (s/n): ");
+        if (scanner.nextLine().trim().equalsIgnoreCase("s")) {
+            generateCSV(q, list);
         }
     }
 
-    /**
-     * Gera um ficheiro CSV com os resultados.
-     */
-    private void generateCSV(String accessCode, List<QuestionResult> results) {
-        // Precisamos de 'java.io.FileWriter' e 'java.io.PrintWriter'
-        String fileName = "resultados_" + accessCode + ".csv";
+    // O método generateCSV mantém-se igual ao que te enviei antes,
+// porque agora já tens o objeto 'Question q' e a lista 'list' disponíveis.
+    private void generateCSV(Question q, List<QuestionResult> results) {
+        // ... (código de escrita do ficheiro igual à resposta anterior) ...
+        String fileName = "resultados_" + q.getAccessCode() + ".csv";
+
+        // Usa "ISO_LOCAL_DATE" ou padrão costumizado para formatar as datas
+        DateTimeFormatter dateFmt = DateTimeFormatter.ofPattern("dd-MM-yyyy");
+        DateTimeFormatter timeFmt = DateTimeFormatter.ofPattern("HH:mm");
 
         try (PrintWriter writer = new PrintWriter(new FileWriter(fileName))) {
+            // --- SECÇÃO 1: Cabeçalho da Pergunta ---
+            writer.println("\"dia\";\"hora inicial\";\"hora final\";\"enunciado da pergunta\";\"opção certa\"");
 
-            // Cabeçalho (conforme Figura 1 do enunciado)
-            // (Para ser 100% igual ao enunciado, precisaríamos dos dados da pergunta,
-            // que não estamos a ir buscar para já. Vamos simplificar.)
+            writer.printf("\"%s\";\"%s\";\"%s\";\"%s\";\"%s\"\n",
+                    q.getBeginDateHour().format(dateFmt),       // Dia
+                    q.getBeginDateHour().format(timeFmt),       // Hora Inicio
+                    q.getEndDateHour().format(timeFmt),         // Hora Fim
+                    q.getEnunciado(),
+                    q.getCorrectAnswer()
+            );
 
-            writer.println("numero de estudante;nome;e-mail;resposta");
+            writer.println(); // Linha em branco (opcional, para legibilidade)
 
-            // Dados    
+            // --- SECÇÃO 2: Opções ---
+            writer.println("\"opção\";\"texto da opção\"");
+            for (Option op : q.getOptions()) {
+                writer.printf("\"%s\";\"%s\"\n", op.getLetter(), op.getTextOption());
+            }
+
+            writer.println(); // Linha em branco
+
+            // --- SECÇÃO 3: Respostas dos Alunos ---
+            writer.println("\"número de estudante\";\"nome\";\"e-mail\";\"resposta\"");
+
             for (QuestionResult res : results) {
-                writer.printf("%s;%s;%s;%s\n",
+                writer.printf("\"%s\";\"%s\";\"%s\";\"%s\"\n",
                         res.getStudentNumber(),
                         res.getStudentName(),
                         res.getStudentEmail(),
-                        res.getAnswerGiven());
+                        res.getAnswerGiven()
+                );
             }
 
-            System.out.println("Ficheiro '" + fileName + "' gerado com sucesso na pasta do projeto.");
+            System.out.println("Ficheiro exportado com sucesso: " + fileName);
 
-        } catch (java.io.IOException e) {
-            System.err.println("Erro ao gerar o ficheiro CSV: " + e.getMessage());
+        } catch (Exception e) {
+            System.err.println("Erro ao criar ficheiro CSV: " + e.getMessage());
         }
     }
 

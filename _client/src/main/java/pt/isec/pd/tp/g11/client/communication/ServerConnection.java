@@ -441,14 +441,32 @@ public class ServerConnection {
         return null;
     }
 
-    public List<QuestionResult> getQuestionResults(String accessCode) {
+    // Adicione esta classe estática no final do ServerConnection ou num ficheiro separado
+    public static class QuestionFullReport implements java.io.Serializable {
+        public Question question;
+        public List<QuestionResult> results;
+
+        public QuestionFullReport(Question q, List<QuestionResult> r) {
+            this.question = q;
+            this.results = r;
+        }
+    }
+
+    // Atualize o método getQuestionResults
+    public QuestionFullReport getQuestionResults(String accessCode) {
         if (tcpSocket == null) return null;
 
         TCPMessage request = new TCPMessage(MessageType.GET_QUESTION_RESULTS_REQUEST, accessCode);
         TCPMessage response = sendRequest(request);
 
         if (response != null && response.getType() == MessageType.GET_QUESTION_RESULTS_SUCCESS) {
-            return (List<QuestionResult>) response.getPayload();
+            // O Payload agora é Object[] { Question, List }
+            if (response.getPayload() instanceof Object[]) {
+                Object[] parts = (Object[]) response.getPayload();
+                Question q = (Question) parts[0];
+                List<QuestionResult> l = (List<QuestionResult>) parts[1];
+                return new QuestionFullReport(q, l);
+            }
         }
         return null;
     }

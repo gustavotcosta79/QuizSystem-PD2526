@@ -971,6 +971,47 @@ public class DatabaseManager {
         return results; // Retorna a lista (pode estar vazia se ninguém respondeu ou se a pergunta não é válida)
     }
 
+    public Question getQuestionDetails(String accessCode) {
+        if (connection == null) return null;
+
+        String sqlQuestion = "SELECT * FROM Pergunta WHERE codigoAcesso = ?";
+        String sqlOptions = "SELECT letra, textoOpcao FROM Opcao WHERE idPergunta = ?";
+
+        Question question = null;
+        List<Option> options = new ArrayList<>();
+
+        try (PreparedStatement pstmt = connection.prepareStatement(sqlQuestion)) {
+            pstmt.setString(1, accessCode);
+            ResultSet rs = pstmt.executeQuery();
+
+            if (rs.next()) {
+                int idPergunta = rs.getInt("id");
+                // Preencher dados (incluindo datas e resposta certa para o CSV)
+                String enunciado = rs.getString("enunciado");
+                String respostaCerta = rs.getString("respostaCerta");
+                LocalDateTime inicio = LocalDateTime.parse(rs.getString("dataHoraInicio"));
+                LocalDateTime fim = LocalDateTime.parse(rs.getString("dataHoraFim"));
+
+                // Buscar opções
+                try (PreparedStatement pstmtOp = connection.prepareStatement(sqlOptions)) {
+                    pstmtOp.setInt(1, idPergunta);
+                    ResultSet rsOp = pstmtOp.executeQuery();
+                    while (rsOp.next()) {
+                        options.add(new Option(rsOp.getString("letra"), rsOp.getString("textoOpcao")));
+                    }
+                }
+
+                question = new Question(enunciado, inicio, fim, respostaCerta, options);
+                question.setId(idPergunta);
+                question.setIdDocente(rs.getInt("idDocente"));
+                question.setAccessCode(accessCode);
+            }
+        } catch (SQLException e) {
+            System.err.println("[DB] Erro getQuestionDetails: " + e.getMessage());
+        }
+        return question;
+    }
+
 }
 
     // --- Métodos Futuros ---
