@@ -66,8 +66,9 @@ public enum MessageType implements Serializable {
 
     SERVER_UNREGISTER,
     SERVER_SYNC_FAILED,
-    // --- Tipos Futuros para TCP (Perguntas, etc.) ---
-    // CREATE_QUESTION, GET_QUESTIONS, SUBMIT_ANSWER, etc.
+
+    NOTIFICATION, // Payload: String (a mensagem para mostrar)
+
 
     ERROR // Para mensagens de erro genéricas
 }

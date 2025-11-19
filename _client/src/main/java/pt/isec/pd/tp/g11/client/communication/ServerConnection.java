@@ -22,6 +22,9 @@ import java.net.InetAddress;
 import java.net.Socket;
 import java.net.SocketTimeoutException;
 import java.util.List;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 
 public class ServerConnection {
 
@@ -45,6 +48,9 @@ public class ServerConnection {
     private Socket tcpSocket;
     private ObjectOutputStream out;
     private ObjectInputStream in;
+
+    private final BlockingQueue<TCPMessage> responseQueue = new LinkedBlockingQueue<>();
+    private NotificationListener notificationListener;
 
     public ServerConnection(String dirInfo) throws Exception {
         String[] parts = dirInfo.split(":");
@@ -100,10 +106,8 @@ public class ServerConnection {
 
     public User login(String email, String password) {
         // Se já tivermos uma ligação, tentar reutilizá-la?
-        // Por agora, vamos assumir que o login é a primeira ação TCP.
         if (tcpSocket != null && !tcpSocket.isClosed()) {
             System.err.println("[Comunicação] Já existe uma ligação TCP ativa.");
-            // Poderíamos tentar fazer logout primeiro, ou simplesmente falhar.
             return null;
         }
 
@@ -113,32 +117,41 @@ public class ServerConnection {
         }
 
         try {
-            // 1. Estabelecer a ligação TCP permanente (NÃO usar try-with-resources)
+            // 1. Estabelecer a ligação TCP permanente
             System.out.println("[Comunicação] A ligar (TCP) a " + serverIp + ":" + serverPort + "...");
             this.tcpSocket = new Socket(serverIp, serverPort);
-            // IMPORTANTE: Criar o Output stream PRIMEIRO
+
+            // Criar os Streams
             this.out = new ObjectOutputStream(tcpSocket.getOutputStream());
             this.in = new ObjectInputStream(tcpSocket.getInputStream());
             System.out.println("[Comunicação] Ligação TCP estabelecida.");
+
+            // --- MODIFICAÇÃO CRÍTICA: Iniciar o NotificationListener IMEDIATAMENTE ---
+            // É necessário iniciar a thread de leitura AGORA, porque ela é que vai ler
+            // a resposta do login do socket e colocá-la na fila.
+            notificationListener = new NotificationListener(in, responseQueue);
+            notificationListener.start();
 
             // 2. Criar e enviar a mensagem de Login
             String[] credentials = {email, password};
             TCPMessage loginRequest = new TCPMessage(MessageType.LOGIN_REQUEST, credentials);
             System.out.println("[Comunicação] A enviar pedido de LOGIN...");
+
+            // Envia diretamente pelo socket (o listener só lê)
             out.writeObject(loginRequest);
-            out.flush(); // Garante que a mensagem é enviada
+            out.flush();
 
-            // 3. Esperar pela resposta do servidor (LOGIN_SUCCESS ou LOGIN_FAILED)
-            System.out.println("[Comunicação] A aguardar resposta do servidor...");
-            Object responseObj = in.readObject(); // Bloqueia até receber resposta
+            // 3. Esperar pela resposta NA FILA (não no socket diretamente)
+            System.out.println("[Comunicação] A aguardar resposta do servidor (via Queue)...");
 
-            if (!(responseObj instanceof TCPMessage)) {
-                System.err.println("[Comunicação] Resposta inválida do servidor.");
-                closeConnection(); // Fechar ligação
+            // Usamos poll com timeout de 10 segundos para não bloquear eternamente se o servidor falhar
+            TCPMessage response = responseQueue.poll(10, java.util.concurrent.TimeUnit.SECONDS);
+
+            if (response == null) {
+                System.err.println("[Comunicação] Timeout: O servidor não respondeu ao pedido de login.");
+                closeConnection(); // Fecha tudo (incluindo o listener)
                 return null;
             }
-
-            TCPMessage response = (TCPMessage) responseObj;
 
             // 4. Processar a resposta
             if (response.getType() == MessageType.LOGIN_SUCCESS) {
@@ -146,14 +159,11 @@ public class ServerConnection {
                     User user = (User) response.getPayload();
                     System.out.println("[Comunicação] Login bem-sucedido para: " + user.getEmail());
 
-                    // GUARDAR CREDENCIAIS
+                    // GUARDAR CREDENCIAIS E INFO DO SERVIDOR (Para o Failover)
                     this.lastEmail = email;
                     this.lastPassword = password;
-                    this.currentServerIp = this.serverIp;     // Guardar onde estamos ligados
-                    this.currentServerPort = this.serverPort; // Para comparar no failover
-                    // TODO: Iniciar a thread de escuta de notificações assíncronas
-                    // this.notificationListener = new NotificationListener(in);
-                    // this.notificationListener.start();
+                    this.currentServerIp = this.serverIp;
+                    this.currentServerPort = this.serverPort;
 
                     return user;
                 } else {
@@ -165,17 +175,16 @@ public class ServerConnection {
                 // Login falhou (ex: LOGIN_FAILED ou outro erro)
                 String errorMsg = (response.getPayload() instanceof String) ? (String) response.getPayload() : "Erro desconhecido.";
                 System.err.println("[Comunicação] Login falhou: " + errorMsg);
-                closeConnection(); // Fechar ligação em caso de falha
+                closeConnection();
                 return null;
             }
 
         } catch (Exception e) {
             System.err.println("[Comunicação] Erro durante o login: " + e.getMessage());
-            closeConnection(); // Garante que fecha a ligação em caso de erro
+            closeConnection(); // Garante que fecha a ligação e o listener em caso de erro
             return null;
         }
     }
-
 
 
     /**
@@ -283,22 +292,32 @@ public class ServerConnection {
 
 
 
-    /** Fecha a ligação TCP e os streams */
+    /** Fecha a ligação TCP, os streams e para a thread de escuta */
     public void closeConnection() {
         // TODO: Enviar mensagem de LOGOUT para o servidor antes de fechar?
         try {
+            // --- NOVO: Parar a thread que está a ler do socket ---
+            if (notificationListener != null) {
+                notificationListener.interrupt();
+            }
+
+            // Fechar streams e socket
             if (out != null) out.close();
             if (in != null) in.close();
             if (tcpSocket != null && !tcpSocket.isClosed()) tcpSocket.close();
-        } catch (Exception e) {     }
-        finally {
-            // ESSENCIAL PARA O FAILOVER
+        } catch (Exception e) {
+            /* ignorar erros durante o fecho */
+        } finally {
+            // ESSENCIAL PARA O FAILOVER (Limpar referências)
             out = null;
             in = null;
             tcpSocket = null;
+            notificationListener = null; // Também limpamos o listener
         }
         System.out.println("[Comunicação] Ligação TCP fechada.");
     }
+
+
 
     /**
      * Envia um objeto Question (com as Options lá dentro) para o servidor.
@@ -532,28 +551,39 @@ public class ServerConnection {
      */
     private TCPMessage sendRequest(TCPMessage requestMsg) {
         try {
-            // 1. Tenta enviar normal
+            // 1. Limpar respostas antigas/lixo da fila
+            responseQueue.clear();
+
+            // 2. Enviar pedido
             out.writeObject(requestMsg);
             out.flush();
-            return (TCPMessage) in.readObject();
+
+            // 3. ESPERAR RESPOSTA NA FILA (Bloqueia aqui)
+            // Usamos poll com timeout para não bloquear para sempre se o servidor morrer
+            TCPMessage response = responseQueue.poll(20, TimeUnit.SECONDS);
+
+            if (response == null) {
+                throw new Exception("Timeout à espera de resposta.");
+            }
+
+            return response;
 
         } catch (Exception e) {
-            System.err.println("[Comunicação] Erro no envio: " + e.getMessage() + ". A tentar Failover...");
+            System.err.println("[Comunicação] Erro/Timeout: " + e.getMessage());
 
-            // 2. Se deu erro, tenta o Failover
+            // LÓGICA DE FAILOVER
             if (reconnectAndReauthenticate()) {
                 try {
-                    // 3. Se recuperou, reenvia o pedido original
-                    System.out.println("[Comunicação] A reenviar pedido original...");
+                    System.out.println("[Comunicação] A reenviar pedido...");
+                    responseQueue.clear(); // Limpar fila da nova conexão
                     out.writeObject(requestMsg);
                     out.flush();
-                    return (TCPMessage) in.readObject();
-                } catch (Exception ex) {
-                    System.err.println("[Comunicação] Falha ao reenviar após failover.");
-                }
+                    // Esperar de novo
+                    return responseQueue.poll(20, TimeUnit.SECONDS);
+                } catch (Exception ex) { /* ... */ }
             }
         }
-        return null; // Falha definitiva
+        return null;
     }
     // TODO: Métodos futuros que a Vista irá chamar
     /*

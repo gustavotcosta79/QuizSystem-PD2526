@@ -4,17 +4,21 @@ import pt.isec.pd.tp.g11.server.db.DatabaseManager;
 
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.util.List;
 
 public class ClientListener extends Thread {
 
     private final ServerSocket serverSocket;
     private final DatabaseManager dbManager; // Vais precisar de passar isto
     private final HeartbeatService heartbeatService;
+    private final List<ClientHandler> activeClients;
 
-    public ClientListener (ServerSocket serverSocket ,DatabaseManager dbManager, HeartbeatService heartbeatService){
+
+    public ClientListener (ServerSocket serverSocket ,DatabaseManager dbManager, HeartbeatService heartbeatService,List<ClientHandler> activeClients){
         this.serverSocket = serverSocket;
         this.dbManager = dbManager;
         this.heartbeatService = heartbeatService;
+        this.activeClients = activeClients;
         setName("ClientListener"); // Boa prática
     }
 
@@ -32,8 +36,8 @@ public class ClientListener extends Thread {
                 System.out.println("[ClientListener] Novo cliente ligado: " + clientSocket.getInetAddress());
 
                 // Lança uma thread para tratar do cliente
-                ClientHandler handler = new ClientHandler(clientSocket ,dbManager,heartbeatService);
-                handler.start(); // Inicia a thread ClientHandler
+                ClientHandler handler = new ClientHandler(clientSocket, dbManager, heartbeatService, activeClients);
+                handler.start();
             }
         } catch (java.net.SocketException e) {
             System.out.println("[ClientListener] Socket fechado, a parar."); // Normal quando o servidor fecha

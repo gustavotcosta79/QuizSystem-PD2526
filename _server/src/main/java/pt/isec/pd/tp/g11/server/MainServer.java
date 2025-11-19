@@ -7,12 +7,9 @@ package pt.isec.pd.tp.g11.server;
 // Imports do projeto
 import pt.isec.pd.tp.g11.common.enums.MessageType;
 import pt.isec.pd.tp.g11.common.messages.UDPMessage;
-import pt.isec.pd.tp.g11.server.net.ClientListener;
-import pt.isec.pd.tp.g11.server.net.DbSyncListener; // Novo Listener
-import pt.isec.pd.tp.g11.server.net.HeartbeatService;
+import pt.isec.pd.tp.g11.server.net.*;
 import pt.isec.pd.tp.g11.common.utils.SerializationUtils;
 import pt.isec.pd.tp.g11.server.db.DatabaseManager;
-import pt.isec.pd.tp.g11.server.net.MulticastListener;
 
 // Imports Java
 import java.io.FileOutputStream;
@@ -23,6 +20,8 @@ import java.net.InetAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.net.SocketTimeoutException;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 public class MainServer {
 
@@ -36,6 +35,8 @@ public class MainServer {
         int clientPort;
         int dbPort;
         String[] primaryServerInfo;
+
+
 
         try {
             // 1. Ler os argumentos da linha de comando
@@ -165,10 +166,16 @@ public class MainServer {
             HeartbeatService heartbeat = new HeartbeatService(config, clientPort, dbPort /*, dbManager */);
             heartbeat.start();
 
-            // Serviço de Escuta de Clientes TCP
+// --- MODIFICAÇÃO PARA NOTIFICAÇÕES ASSÍNCRONAS ---
+            // 1. Criar a lista partilhada de clientes ativos (thread-safe)
+            List<ClientHandler> activeClients = new CopyOnWriteArrayList<>();
+
+            // 2. Passar a lista para o ClientListener
             System.out.println("[MainServer] A iniciar ClientListener...");
-            ClientListener clientListener = new ClientListener(clientSocket, dbManager,heartbeat);
+            ClientListener clientListener = new ClientListener(clientSocket, dbManager, heartbeat, activeClients);
             clientListener.start();
+            // -------------------------------------------------
+
 
             // Iniciar MulticastListener
             MulticastListener mcListener = new MulticastListener(config.getMulticastAddress(), dbManager, dbPort);

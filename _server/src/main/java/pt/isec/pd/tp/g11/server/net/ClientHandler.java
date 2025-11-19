@@ -26,16 +26,21 @@
         private ObjectInputStream in;
         private User authenticatedUser = null;
         private final HeartbeatService heartbeatService;
+        private final List<ClientHandler> activeClients;
 
-        public ClientHandler(Socket socket, DatabaseManager dbManager, HeartbeatService heartbeatService ) {
+        public ClientHandler(Socket socket, DatabaseManager dbManager,
+                             HeartbeatService heartbeatService, List<ClientHandler> activeClients) {
             this.clientSocket = socket;
             this.dbManager = dbManager;
             this.heartbeatService = heartbeatService;
             setName("ClientHandler-" + socket.getInetAddress());
+            this.activeClients = activeClients;
         }
 
         @Override
         public void run() {
+            // 1. REGISTAR ESTE CLIENTE NA LISTA
+            activeClients.add(this);
             try {
                 // 1. Setup dos streams (Object Streams para TCPMessage)
                 this.out = new ObjectOutputStream(clientSocket.getOutputStream());
@@ -128,6 +133,8 @@
             } finally {
                 // Garante que o socket é sempre fechado quando a thread termina
                 try {
+                    // 2. REMOVER DA LISTA QUANDO SAIR
+                    activeClients.remove(this);
                     if (clientSocket != null && !clientSocket.isClosed()) {
                         clientSocket.close();
                     }
@@ -270,11 +277,10 @@
 
         /**
          * Trata de um pedido de criação de uma nova pergunta.
-         * Verifica se o utilizador é um Docente.
+         * Verifica se o utilizador é um Docente e notifica todos os clientes.
          */
         private void handleCreateQuestion(TCPMessage request) throws Exception {
             // 1. Verificar se o utilizador é um Docente
-            //
             if (!(authenticatedUser instanceof Docente)) {
                 out.writeObject(new TCPMessage(MessageType.CREATE_QUESTION_FAILED, "Apenas Docentes podem criar perguntas."));
                 return;
@@ -292,18 +298,26 @@
             // (O ID do docente é o do utilizador autenticado)
             String[] result = dbManager.createQuestion(question, authenticatedUser.getId());
 
-            // 4. Enviar a resposta
+            // 4. Processar o resultado
             if (result != null) {
                 String accessCode = result[0];
-                String sqlQuery = result[1]; // Esta string tem os INSERTs todos separados por ;
+                String sqlQuery = result[1]; // SQL para os backups
 
-                // 1. Enviar Multicast
+                // 4.1. Enviar Multicast (Sincronização da BD com Backups)
                 int newVersion = dbManager.getDbVersion();
                 heartbeatService.sendUpdate(sqlQuery, newVersion);
 
-                // 2. Responder ao Cliente
+                // 4.2. Responder ao Cliente que fez o pedido (Confirmação Síncrona)
                 out.writeObject(new TCPMessage(MessageType.CREATE_QUESTION_SUCCESS, accessCode));
-                System.out.println("[ClientHandler] Pergunta criada e propagada.");
+
+                // 4.3. Notificar TODOS os clientes ligados (Notificação Assíncrona)
+                // Esta mensagem vai aparecer no ecrã dos estudantes instantaneamente
+                String notificationText = "NOVA PERGUNTA Criada! O docente " + authenticatedUser.getNome() +
+                        " acabou de criar o quiz: \"" + question.getEnunciado() + "\"";
+
+                broadcast(notificationText); // <--- AQUI ESTÁ A MODIFICAÇÃO
+
+                System.out.println("[ClientHandler] Pergunta criada, propagada aos backups e notificada aos clientes.");
             } else {
                 System.err.println("[ClientHandler] Falha ao criar pergunta na BD.");
                 out.writeObject(new TCPMessage(MessageType.CREATE_QUESTION_FAILED, "Erro interno do servidor ao guardar a pergunta."));
@@ -411,26 +425,31 @@
                 out.writeObject(new TCPMessage(MessageType.DELETE_QUESTION_FAILED, "Apenas docentes."));
                 return;
             }
-            // ALTERAÇÃO AQUI: Espera uma String, não um Integer
+
             if (!(request.getPayload() instanceof String)) {
                 out.writeObject(new TCPMessage(MessageType.DELETE_QUESTION_FAILED, "Payload inválido (esperado Código de Acesso)."));
                 return;
             }
 
-            String accessCode = (String) request.getPayload(); // ALTERAÇÃO AQUI
+            String accessCode = (String) request.getPayload();
             int idDocente = authenticatedUser.getId();
 
-            // 2. Tentar eliminar (passa o 'accessCode')
-            String sqlQuery = dbManager.deleteQuestion(accessCode, idDocente); // ALTERAÇÃO AQUI
+            // 2. Tentar eliminar
+            String sqlQuery = dbManager.deleteQuestion(accessCode, idDocente);
 
             if (sqlQuery != null) {
-                // 3. Propagar para os Backups
+                // 3. Propagar para os Backups (Sincronização BD)
                 int newVersion = dbManager.getDbVersion();
                 heartbeatService.sendUpdate(sqlQuery, newVersion);
 
-                // 4. Responder ao Cliente
+                // 4. Responder ao Cliente (Sucesso Síncrono)
                 out.writeObject(new TCPMessage(MessageType.DELETE_QUESTION_SUCCESS));
-                System.out.println("[ClientHandler] Pergunta " + accessCode + " eliminada e propagada."); // Log atualizado
+
+                // 5. NOTIFICAR TODOS (Broadcast Assíncrono) -> O NOVO PASSO
+                String msg = "ATENÇÃO: A pergunta com código " + accessCode + " foi CANCELADA pelo docente.";
+                broadcast(msg);
+
+                System.out.println("[ClientHandler] Pergunta " + accessCode + " eliminada, propagada e notificada.");
             } else {
                 out.writeObject(new TCPMessage(MessageType.DELETE_QUESTION_FAILED, "Erro: Pergunta não existe, não é sua, ou já tem respostas."));
             }
@@ -455,22 +474,26 @@
             Question newQuestionData = (Question) payload[1];
             int idDocente = authenticatedUser.getId();
 
-            // 2. Tentar editar
+            // 2. Tentar editar (Chama o método real do DBManager)
             String sqlQuery = dbManager.editQuestion(accessCode, newQuestionData, idDocente);
 
             if (sqlQuery != null) {
-                // 3. Propagar para os Backups
+                // 3. Propagar para os Backups (Sincronização BD)
                 int newVersion = dbManager.getDbVersion();
-                heartbeatService.sendUpdate(sqlQuery, newVersion); // Envia o bloco SQL
+                heartbeatService.sendUpdate(sqlQuery, newVersion);
 
-                // 4. Responder ao Cliente
+                // 4. Responder ao Cliente (Sucesso Síncrono)
                 out.writeObject(new TCPMessage(MessageType.EDIT_QUESTION_SUCCESS));
-                System.out.println("[ClientHandler] Pergunta " + accessCode + " editada e propagada.");
+
+                // 5. NOTIFICAR TODOS (Broadcast Assíncrono) -> O NOVO PASSO
+                String msg = "ATUALIZAÇÃO: A pergunta " + accessCode + " (\"" + newQuestionData.getEnunciado() + "\") foi alterada pelo docente.";
+                broadcast(msg);
+
+                System.out.println("[ClientHandler] Pergunta " + accessCode + " editada, propagada e notificada.");
             } else {
                 out.writeObject(new TCPMessage(MessageType.EDIT_QUESTION_FAILED, "Erro: Pergunta não existe, não é sua, ou já tem respostas."));
             }
         }
-
         /**
          * Trata de um pedido de um Docente para atualizar o seu perfil.
          */
@@ -624,6 +647,30 @@
             Object[] responsePayload = new Object[]{ question, results };
 
             out.writeObject(new TCPMessage(MessageType.GET_QUESTION_RESULTS_SUCCESS, responsePayload));
+        }
+
+        /**
+         * Envia uma notificação assíncrona para ESTE cliente específico.
+         */
+        public void sendNotification(String message) {
+            try {
+                // Sincronizar porque o 'out' pode estar a ser usado noutro lado
+                synchronized (out) {
+                    out.writeObject(new TCPMessage(MessageType.NOTIFICATION, message));
+                    out.flush();
+                }
+            } catch (Exception e) {
+                System.err.println("Erro ao notificar cliente: " + e.getMessage());
+            }
+        }
+
+        /**
+         * Envia uma mensagem para TODOS os clientes ligados (Broadcast).
+         */
+        private void broadcast(String message) {
+            for (ClientHandler client : activeClients) {
+                client.sendNotification(message);
+            }
         }
 
         // TODO: Implementar  e handleRegisterDocente
