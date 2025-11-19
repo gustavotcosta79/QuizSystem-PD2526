@@ -35,6 +35,12 @@ public class ServerConnection {
     private String serverIp;
     private int serverPort;
 
+    //guardar o ultimo email e password, para re-autenticar depois
+    private String lastEmail = null;
+    private String lastPassword = null;
+    private String currentServerIp = null;
+    private int currentServerPort = 0;
+
     // TODO: A ligação TCP principal e os ObjectStreams
     private Socket tcpSocket;
     private ObjectOutputStream out;
@@ -140,6 +146,11 @@ public class ServerConnection {
                     User user = (User) response.getPayload();
                     System.out.println("[Comunicação] Login bem-sucedido para: " + user.getEmail());
 
+                    // GUARDAR CREDENCIAIS
+                    this.lastEmail = email;
+                    this.lastPassword = password;
+                    this.currentServerIp = this.serverIp;     // Guardar onde estamos ligados
+                    this.currentServerPort = this.serverPort; // Para comparar no failover
                     // TODO: Iniciar a thread de escuta de notificações assíncronas
                     // this.notificationListener = new NotificationListener(in);
                     // this.notificationListener.start();
@@ -279,7 +290,13 @@ public class ServerConnection {
             if (out != null) out.close();
             if (in != null) in.close();
             if (tcpSocket != null && !tcpSocket.isClosed()) tcpSocket.close();
-        } catch (Exception e) { /* ignorar */ }
+        } catch (Exception e) {     }
+        finally {
+            // ESSENCIAL PARA O FAILOVER
+            out = null;
+            in = null;
+            tcpSocket = null;
+        }
         System.out.println("[Comunicação] Ligação TCP fechada.");
     }
 
@@ -290,327 +307,236 @@ public class ServerConnection {
      * @return O código de acesso (String) se for bem-sucedido, ou null se falhar.
      */
     public String createQuestion(Question question) {
-        if (tcpSocket == null || tcpSocket.isClosed() || out == null || in == null) {
-            System.err.println("[Comunicação] Não está ligado ao servidor (faça login primeiro).");
-            return null;
+        if (serverIp == null) return null;
+
+        TCPMessage request = new TCPMessage(MessageType.CREATE_QUESTION_REQUEST, question);
+        TCPMessage response = sendRequest(request);
+
+        if (response != null && response.getType() == MessageType.CREATE_QUESTION_SUCCESS) {
+            return (String) response.getPayload();
         }
-
-        try {
-            // 1. Criar e enviar o pedido
-            System.out.println("[Comunicação] A enviar CREATE_QUESTION_REQUEST...");
-            TCPMessage request = new TCPMessage(MessageType.CREATE_QUESTION_REQUEST, question);
-            out.writeObject(request);
-            out.flush();
-
-            // 2. Esperar pela resposta do servidor
-            TCPMessage response = (TCPMessage) in.readObject();
-
-            // 3. Processar a resposta
-            if (response.getType() == MessageType.CREATE_QUESTION_SUCCESS) {
-                if (response.getPayload() instanceof String) {
-                    return (String) response.getPayload(); // Retorna o Código de Acesso
-                }
-            } else {
-                // Se falhou (CREATE_QUESTION_FAILED)
-                String errorMsg = (response.getPayload() instanceof String) ? (String) response.getPayload() : "Erro desconhecido.";
-                System.err.println("[Comunicação] Falha ao criar pergunta: " + errorMsg);
-            }
-        } catch (Exception e) {
-            System.err.println("[Comunicação] Erro crítico ao criar pergunta: " + e.getMessage());
-            // TODO: Tratar falha de ligação (pode ter de fechar e tentar reconectar)
-        }
-        return null; // Falha
+        return null;
     }
 
 
 
-
-    /**
-     * Submete a resposta de um estudante a uma pergunta.
-     */
     public boolean submitAnswer(int idPergunta, String respostaLetra) {
-        if (tcpSocket == null || !tcpSocket.isConnected()) return false;
+        // Validação básica de pré-conexão (opcional, pois o sendRequest também falha se for null)
+        if (tcpSocket == null) return false;
 
-        try {
-            // --- ALTERAÇÃO AQUI ---
-            // 1. Criar o objeto de payload
-            AnswerPayload payload = new AnswerPayload(idPergunta, respostaLetra);
-            TCPMessage request = new TCPMessage(MessageType.SUBMIT_ANSWER, payload);
-            // --- FIM DA ALTERAÇÃO ---
+        AnswerPayload payload = new AnswerPayload(idPergunta, respostaLetra);
+        TCPMessage request = new TCPMessage(MessageType.SUBMIT_ANSWER, payload);
 
-            // 2. Enviar pedido
-            out.writeObject(request);
-            out.flush();
+        TCPMessage response = sendRequest(request);
 
-            // 3. Esperar resposta
-            TCPMessage response = (TCPMessage) in.readObject();
-
-            // ... (resto do método igual)
-            return (response.getType() == MessageType.SUBMIT_ANSWER_SUCCESS);
-
-        } catch (Exception e) {
-            System.err.println("[Comunicação] Erro ao submeter resposta: " + e.getMessage());
-            return false;
-        }
+        return (response != null && response.getType() == MessageType.SUBMIT_ANSWER_SUCCESS);
     }
 
-    /**
-     * Pede ao servidor a lista de perguntas criadas pelo docente logado.
-     * @param filter O filtro ("ALL", "ACTIVE", "FUTURE", "PAST")
-     * @return Uma Lista de Questions, ou null se falhar.
-     */
     public List<Question> getMyQuestions(String filter) {
-        if (tcpSocket == null || tcpSocket.isClosed()) {
-            System.err.println("[Comunicação] Não está ligado ao servidor.");
-            return null;
-        }
+        if (tcpSocket == null) return null;
 
-        try {
-            // 1. Enviar pedido (para o ClientHandler que estava bloqueado no seu loop)
-            TCPMessage request = new TCPMessage(MessageType.GET_MY_QUESTIONS_REQUEST, filter);
-            out.writeObject(request);
-            out.flush();
+        TCPMessage request = new TCPMessage(MessageType.GET_MY_QUESTIONS_REQUEST, filter);
+        TCPMessage response = sendRequest(request);
 
-            // 2. Esperar resposta
-            //recebe a resposta vinda do clientHandler
-            TCPMessage response = (TCPMessage) in.readObject();
-
-            // 3. Processar resposta
-            if (response.getType() == MessageType.GET_MY_QUESTIONS_SUCCESS) {
-                if (response.getPayload() instanceof List) {
-                    // Fazemos um cast (é seguro se confiarmos no servidor)
-                    return (List<Question>) response.getPayload(); // SUCESSO!
-                }
-            } else {
-                String errorMsg = (response.getPayload() instanceof String) ? (String) response.getPayload() : "Erro desconhecido.";
-                System.err.println("[Comunicação] Falha ao obter lista de perguntas: " + errorMsg);
+        if (response != null && response.getType() == MessageType.GET_MY_QUESTIONS_SUCCESS) {
+            if (response.getPayload() instanceof List) {
+                return (List<Question>) response.getPayload();
             }
-        } catch (Exception e) {
-            System.err.println("[Comunicação] Erro crítico ao obter perguntas: " + e.getMessage());
         }
-        return null; // Falha (devolve null, a UI trata disso)
+        // Se falhar ou payload inválido
+        if (response != null) System.err.println("Erro ao obter perguntas: " + response.getPayload());
+        return null;
     }
 
 // ... (depois do teu método createQuestion)
 
-    /**
-     * Pede ao servidor uma pergunta, dado o seu código de acesso.
-     *
-     * @param accessCode O código de acesso (ex: "ABC123")
-     * @return O objeto Question se for encontrado e ativo, ou null se falhar.
-     */
     public Question getQuestionByCode(String accessCode) {
-        if (tcpSocket == null || tcpSocket.isClosed()) {
-            System.err.println("[Comunicação] Não está ligado ao servidor.");
-            return null;
-        }
+        if (tcpSocket == null) return null;
 
-        try {
-            // 1. Enviar pedido
-            TCPMessage request = new TCPMessage(MessageType.GET_QUESTION_BY_CODE, accessCode);
-            out.writeObject(request);
-            out.flush();
+        TCPMessage request = new TCPMessage(MessageType.GET_QUESTION_BY_CODE, accessCode);
+        TCPMessage response = sendRequest(request);
 
-            // 2. Esperar resposta
-            TCPMessage response = (TCPMessage) in.readObject();
-
-            // 3. Processar resposta
-            if (response.getType() == MessageType.GET_QUESTION_SUCCESS) {
-                if (response.getPayload() instanceof Question) {
-                    return (Question) response.getPayload(); // SUCESSO!
-                }
-            } else {
-                String errorMsg = (response.getPayload() instanceof String) ? (String) response.getPayload() : "Erro desconhecido.";
-                System.err.println("[Comunicação] Falha ao obter pergunta: " + errorMsg);
+        if (response != null && response.getType() == MessageType.GET_QUESTION_SUCCESS) {
+            if (response.getPayload() instanceof Question) {
+                return (Question) response.getPayload();
             }
-        } catch (Exception e) {
-            System.err.println("[Comunicação] Erro crítico ao obter pergunta: " + e.getMessage());
         }
-        return null; // Falha
+        return null;
     }
 
     public boolean deleteQuestion(String accessCode) {
-        if (tcpSocket == null || tcpSocket.isClosed()) return false;
+        if (tcpSocket == null) return false;
 
-        try {
-            // ALTERAÇÃO AQUI (envia o 'accessCode' como payload)
-            TCPMessage request = new TCPMessage(MessageType.DELETE_QUESTION_REQUEST, accessCode);
-            out.writeObject(request);
-            out.flush();
+        TCPMessage request = new TCPMessage(MessageType.DELETE_QUESTION_REQUEST, accessCode);
+        TCPMessage response = sendRequest(request);
 
-            TCPMessage response = (TCPMessage) in.readObject();
-
-            if (response.getType() == MessageType.DELETE_QUESTION_SUCCESS) {
-                return true;
-            } else {
-                String errorMsg = (response.getPayload() instanceof String) ? (String) response.getPayload() : "Erro.";
-                System.err.println("[Comunicação] Falha ao eliminar: " + errorMsg);
-                return false;
-            }
-        } catch (Exception e) {
-            System.err.println("[Comunicação] Erro crítico ao eliminar: " + e.getMessage());
-            // TODO: Aqui entrará o failover
-            return false;
+        if (response != null && response.getType() == MessageType.DELETE_QUESTION_SUCCESS) {
+            return true;
         }
+
+        if (response != null) System.err.println("Falha ao eliminar: " + response.getPayload());
+        return false;
     }
 
     // Em ServerConnection.java
 
     public boolean editQuestion(String accessCode, Question newQuestionData) {
-        if (tcpSocket == null || tcpSocket.isClosed()) return false;
+        if (tcpSocket == null) return false;
 
-        try {
-            // Prepara o payload
-            Object[] payload = { accessCode, newQuestionData };
+        Object[] payload = { accessCode, newQuestionData };
+        TCPMessage request = new TCPMessage(MessageType.EDIT_QUESTION_REQUEST, payload);
 
-            TCPMessage request = new TCPMessage(MessageType.EDIT_QUESTION_REQUEST, payload);
-            out.writeObject(request);
-            out.flush();
+        TCPMessage response = sendRequest(request);
 
-            TCPMessage response = (TCPMessage) in.readObject();
-
-            if (response.getType() == MessageType.EDIT_QUESTION_SUCCESS) {
-                return true;
-            } else {
-                String errorMsg = (response.getPayload() instanceof String) ? (String) response.getPayload() : "Erro.";
-                System.err.println("[Comunicação] Falha ao editar: " + errorMsg);
-                return false;
-            }
-        } catch (Exception e) {
-            System.err.println("[Comunicação] Erro crítico ao editar: " + e.getMessage());
-            // TODO: Aqui entrará o failover
-            return false;
+        if (response != null && response.getType() == MessageType.EDIT_QUESTION_SUCCESS) {
+            return true;
         }
+
+        if (response != null) System.err.println("Falha ao editar: " + response.getPayload());
+        return false;
     }
 
 
-
-    /**
-     * Envia um pedido de atualização de perfil para um Docente.
-     * @param docente O objeto Docente com os dados ATUALIZADOS.
-     * @param newPassword A nova password (em texto simples), ou "" se não quiser mudar.
-     * @return true se for bem-sucedido, false caso contrário.
-     */
     public boolean updateProfileDocente(Docente docente, String newPassword) {
-        if (tcpSocket == null || tcpSocket.isClosed()) return false;
+        if (tcpSocket == null) return false;
 
-        try {
-            // Payload: Object[] { Docente atualizado, String newPassword }
-            Object[] payload = { docente, newPassword };
-            TCPMessage request = new TCPMessage(MessageType.EDIT_PROFILE_DOCENTE_REQUEST, payload);
+        Object[] payload = { docente, newPassword };
+        TCPMessage request = new TCPMessage(MessageType.EDIT_PROFILE_DOCENTE_REQUEST, payload);
 
-            out.writeObject(request);
-            out.flush();
+        TCPMessage response = sendRequest(request);
 
-            TCPMessage response = (TCPMessage) in.readObject();
-
-            if (response.getType() == MessageType.EDIT_PROFILE_DOCENTE_SUCCESS) {
-                return true;
-            } else {
-                String errorMsg = (response.getPayload() instanceof String) ? (String) response.getPayload() : "Erro.";
-                System.err.println("[Comunicação] Falha ao atualizar perfil: " + errorMsg);
-                return false;
-            }
-        } catch (Exception e) {
-            System.err.println("[Comunicação] Erro crítico ao atualizar perfil: " + e.getMessage());
-            return false;
+        if (response != null && response.getType() == MessageType.EDIT_PROFILE_DOCENTE_SUCCESS) {
+            return true;
         }
+
+        if (response != null) System.err.println("Falha ao atualizar perfil: " + response.getPayload());
+        return false;
     }
 
-    /**
-     * Envia um pedido de atualização de perfil para um Estudante.
-     * @param estudante O objeto Estudante com os dados ATUALIZADOS.
-     * @param newPassword A nova password (em texto simples), ou "" se não quiser mudar.
-     * @return true se for bem-sucedido, false caso contrário.
-     */
     public boolean updateProfileEstudante(Estudante estudante, String newPassword) {
-        if (tcpSocket == null || tcpSocket.isClosed()) return false;
+        if (tcpSocket == null) return false;
 
-        try {
-            // Payload: Object[] { Estudante atualizado, String newPassword }
-            Object[] payload = { estudante, newPassword };
-            TCPMessage request = new TCPMessage(MessageType.EDIT_PROFILE_ESTUDANTE_REQUEST, payload);
+        Object[] payload = { estudante, newPassword };
+        TCPMessage request = new TCPMessage(MessageType.EDIT_PROFILE_ESTUDANTE_REQUEST, payload);
 
-            out.writeObject(request);
-            out.flush();
+        TCPMessage response = sendRequest(request);
 
-            TCPMessage response = (TCPMessage) in.readObject();
-
-            if (response.getType() == MessageType.EDIT_PROFILE_ESTUDANTE_SUCCESS) {
-                return true;
-            } else {
-                String errorMsg = (response.getPayload() instanceof String) ? (String) response.getPayload() : "Erro.";
-                System.err.println("[Comunicação] Falha ao atualizar perfil: " + errorMsg);
-                return false;
-            }
-        } catch (Exception e) {
-            System.err.println("[Comunicação] Erro crítico ao atualizar perfil: " + e.getMessage());
-            return false;
+        if (response != null && response.getType() == MessageType.EDIT_PROFILE_ESTUDANTE_SUCCESS) {
+            return true;
         }
+
+        if (response != null) System.err.println("Falha ao atualizar perfil: " + response.getPayload());
+        return false;
     }
 
-    /**
-     * Pede ao servidor o histórico de respostas submetidas pelo utilizador logado.
-     */
     public List<SubmittedAnswer> getMyAnswers() {
-        if (tcpSocket == null || tcpSocket.isClosed()) return null;
+        if (tcpSocket == null) return null;
 
-        try {
-            // 1. Enviar pedido (sem payload)
-            TCPMessage request = new TCPMessage(MessageType.GET_MY_ANSWERS_REQUEST);
-            out.writeObject(request);
-            out.flush();
+        TCPMessage request = new TCPMessage(MessageType.GET_MY_ANSWERS_REQUEST);
+        TCPMessage response = sendRequest(request);
 
-            // 2. Esperar resposta
-            TCPMessage response = (TCPMessage) in.readObject();
-
-            // 3. Processar resposta
-            if (response.getType() == MessageType.GET_MY_ANSWERS_SUCCESS) {
-                if (response.getPayload() instanceof List) {
-                    return (List<SubmittedAnswer>) response.getPayload(); // SUCESSO!
-                }
-            } else {
-                String errorMsg = (response.getPayload() instanceof String) ? (String) response.getPayload() : "Erro.";
-                System.err.println("[Comunicação] Falha ao obter histórico: " + errorMsg);
-            }
-        } catch (Exception e) {
-            System.err.println("[Comunicação] Erro crítico ao obter histórico: " + e.getMessage());
-            // TODO: Adicionar failover aqui
+        if (response != null && response.getType() == MessageType.GET_MY_ANSWERS_SUCCESS) {
+            return (List<SubmittedAnswer>) response.getPayload();
         }
-        return null; // Falha
+        return null;
+    }
+
+    public List<QuestionResult> getQuestionResults(String accessCode) {
+        if (tcpSocket == null) return null;
+
+        TCPMessage request = new TCPMessage(MessageType.GET_QUESTION_RESULTS_REQUEST, accessCode);
+        TCPMessage response = sendRequest(request);
+
+        if (response != null && response.getType() == MessageType.GET_QUESTION_RESULTS_SUCCESS) {
+            return (List<QuestionResult>) response.getPayload();
+        }
+        return null;
+    }
+
+
+    /**
+     * Tenta restabelecer a ligação ao cluster e re-autenticar o utilizador.
+     * Implementa a lógica de espera de 20s exigida pelo enunciado.
+     * @return true se a recuperação for bem-sucedida, caso contrário, termina a aplicação.
+     */
+    private boolean reconnectAndReauthenticate() {
+        System.err.println("[Comunicação] Ligação perdida. A tentar recuperar...");
+
+        String oldServerIp = this.currentServerIp;
+        int oldServerPort = this.currentServerPort;
+
+        closeConnection(); // Limpa a ligação antiga
+
+        if (!findServer()) {
+            System.err.println("[Failover] Falha na T1: Diretoria inacessível...");
+            System.exit(1);
+        }
+
+        // --- LÓGICA CORRIGIDA ---
+
+        // 1. Se for o mesmo servidor, espera 20s (conforme enunciado)
+        if (this.serverIp.equals(oldServerIp) && this.serverPort == oldServerPort) {
+            System.out.println("[Failover] Diretoria aponta para o mesmo servidor. A aguardar 20 segundos...");
+            try {
+                Thread.sleep(20000);
+            } catch (InterruptedException e) { return false; }
+
+            // 2. Tenta descobrir novamente após 20s
+            if (!findServer()) {
+                System.err.println("[Failover] Falha na T2: Não foi possível obter servidor...");
+                System.exit(1);
+            }
+
+            // REMOVER O BLOCO QUE FAZIA SYSTEM.EXIT AQUI
+            // Não queremos sair só porque o servidor é o mesmo. Queremos tentar o Login abaixo!
+        }
+
+        // 3. Atualiza os dados do servidor atual (seja novo ou o mesmo)
+        this.currentServerIp = this.serverIp;
+        this.currentServerPort = this.serverPort;
+
+        // 4. Tenta Re-autenticar (Isto vai testar se o servidor está realmente vivo)
+        if (lastEmail != null && lastPassword != null) {
+            User user = login(this.lastEmail, this.lastPassword);
+            if (user != null) {
+                System.out.println("[Failover] Recuperação e re-autenticação BEM-SUCEDIDAS.");
+                return true;
+            }
+        }
+
+        System.err.println("[Failover] Falha definitiva (servidor recusou ligação ou login). A aplicação vai terminar.");
+        System.exit(1);
+        return false;
     }
 
     /**
-     * Pede ao servidor a lista de resultados de uma pergunta (respostas dos alunos).
+     * Método genérico para enviar pedidos e tratar falhas de rede automaticamente.
      */
-    public List<QuestionResult> getQuestionResults(String accessCode) {
-        if (tcpSocket == null || tcpSocket.isClosed()) return null;
-
+    private TCPMessage sendRequest(TCPMessage requestMsg) {
         try {
-            // 1. Enviar pedido
-            TCPMessage request = new TCPMessage(MessageType.GET_QUESTION_RESULTS_REQUEST, accessCode);
-            out.writeObject(request);
+            // 1. Tenta enviar normal
+            out.writeObject(requestMsg);
             out.flush();
+            return (TCPMessage) in.readObject();
 
-            // 2. Esperar resposta
-            TCPMessage response = (TCPMessage) in.readObject();
-
-            // 3. Processar resposta
-            if (response.getType() == MessageType.GET_QUESTION_RESULTS_SUCCESS) {
-                if (response.getPayload() instanceof List) {
-                    return (List<QuestionResult>) response.getPayload(); // SUCESSO!
-                }
-            } else {
-                String errorMsg = (response.getPayload() instanceof String) ? (String) response.getPayload() : "Erro.";
-                System.err.println("[Comunicação] Falha ao obter resultados: " + errorMsg);
-            }
         } catch (Exception e) {
-            System.err.println("[Comunicação] Erro crítico ao obter resultados: " + e.getMessage());
-            // TODO: Adicionar failover aqui
-        }
-        return null; // Falha
-    }
+            System.err.println("[Comunicação] Erro no envio: " + e.getMessage() + ". A tentar Failover...");
 
+            // 2. Se deu erro, tenta o Failover
+            if (reconnectAndReauthenticate()) {
+                try {
+                    // 3. Se recuperou, reenvia o pedido original
+                    System.out.println("[Comunicação] A reenviar pedido original...");
+                    out.writeObject(requestMsg);
+                    out.flush();
+                    return (TCPMessage) in.readObject();
+                } catch (Exception ex) {
+                    System.err.println("[Comunicação] Falha ao reenviar após failover.");
+                }
+            }
+        }
+        return null; // Falha definitiva
+    }
     // TODO: Métodos futuros que a Vista irá chamar
     /*
     public User login(String email, String password) {

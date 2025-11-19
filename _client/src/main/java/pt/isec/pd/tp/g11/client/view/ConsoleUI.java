@@ -201,7 +201,7 @@ public class ConsoleUI implements Runnable {
             System.out.println("2. Listar Minhas Perguntas"); //(leitura) Nao é preciso fazer sicronizacao
             System.out.println("3. Editar Pergunta"); //sincronizacao feita
             System.out.println("4. Eliminar Pergunta ");//sincronizacao feita
-            System.out.println("5. Ver Resultados de Pergunta Expirada (TODO)"); // filtro para ver ou exportar para csv
+            System.out.println("5. Ver Resultados de Pergunta Expirada"); // filtro para ver ou exportar para csv
             System.out.println("6. Editar Registo Pessoal (Docente)\n"); //sincronizado
             System.out.println("0. Logout");
             System.out.print("Escolha: ");

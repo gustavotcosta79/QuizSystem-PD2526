@@ -25,7 +25,7 @@ public class HeartbeatService extends Thread {
     private final int multicastPort = 3030; // Fixo, conforme PDF
 
     // TODO: private final DatabaseManager dbManager;
-
+    boolean wasPrimary = false;
     private boolean isRunning = true;
 
     // Construtor atualizado para receber a Config
@@ -36,6 +36,8 @@ public class HeartbeatService extends Thread {
         this.serverClientPort = serverClientPort;
         this.serverDbPort = serverDbPort;
         // this.dbManager = dbManager;
+
+
 
         setDaemon(true);
         setName("HeartbeatService");
@@ -112,6 +114,31 @@ public class HeartbeatService extends Thread {
                     // TODO: Processar a resposta do diretório (saber quem é o principal)
                     // String[] primaryInfo = response.getPayload();
                     // System.out.println("[Heartbeat] Resposta do Dir: O primário é " + primaryInfo[0]);
+
+                    // --- CÓDIGO NOVO PARA LOG DE PROMOÇÃO ---
+                    // Verifica se a resposta é válida (SERVER_REGISTER_OK contém info do líder)
+                    if (response.getType() == MessageType.SERVER_REGISTER_OK) {
+                        String[] primaryInfo = response.getPayload(); // [0]=IP, [1]=DbPort
+
+                        if (primaryInfo != null && primaryInfo.length >= 2) {
+                            int reportedPrimaryPort = Integer.parseInt(primaryInfo[1]);
+
+                            // Verifica se sou EU o principal (comparando o meu porto de BD)
+                            boolean amIPrimary = (reportedPrimaryPort == serverDbPort);
+
+                            // A LÓGICA DO LOG:
+                            // Se eu NÃO era primary na última verificação, e AGORA SOU...
+                            if (amIPrimary && !wasPrimary) {
+                                System.out.println("\n=================================================");
+                                System.out.println("[Heartbeat] >>> FUI PROMOVIDO A SERVIDOR PRINCIPAL! <<<");
+                                System.out.println("=================================================\n");
+                            }
+
+                            // Atualiza o estado para a próxima volta do loop
+                            wasPrimary = amIPrimary;
+                        }
+                    }
+                    // ----------------------------------------
 
                     // 7. Dormir 5 segundos
                     Thread.sleep(HEARTBEAT_INTERVAL_MS);

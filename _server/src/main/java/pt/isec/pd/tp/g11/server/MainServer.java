@@ -103,17 +103,6 @@ public class MainServer {
             if (isPrimary) {
                 System.out.println("[MainServer] >>> ESTE SERVIDOR É O PRIMÁRIO <<<");
 
-                // Se é primário, inicia o listener para enviar a BD a quem pedir.
-                // Nota: O dbManager precisa do método getDbFilePath() implementado.
-                String dbPath = dbManager.getDbFilePath();
-
-                if (dbPath != null) {
-                    System.out.println("[MainServer] A ativar serviço de envio de BD...");
-                    DbSyncListener dbSyncListener = new DbSyncListener(dbSyncSocket, dbPath);
-                    dbSyncListener.start();
-                } else {
-                    System.err.println("[MainServer] ERRO: Caminho da BD é null.");
-                }
 
             } else {
                 System.out.println("[MainServer] >>> ESTE SERVIDOR É BACKUP <<<");
@@ -163,6 +152,15 @@ public class MainServer {
 
             // 6. INICIAR OS SERVIÇOS DE BACKGROUND (THREADS)
 
+            // --- ALTERAÇÃO AQUI: O DbSyncListener arranca SEMPRE ---
+            // Assim, se este backup virar Primary, já está pronto a enviar a BD.
+            String currentDbPath = dbManager.getDbFilePath();
+            if (currentDbPath != null) {
+                System.out.println("[MainServer] A ativar serviço de envio de BD (DbSyncListener)...");
+                DbSyncListener dbSyncListener = new DbSyncListener(dbSyncSocket, currentDbPath);
+                dbSyncListener.start();
+            }
+
             // Serviço de Heartbeat (envia UDP para diretoria e Multicast para cluster)
             HeartbeatService heartbeat = new HeartbeatService(config, clientPort, dbPort /*, dbManager */);
             heartbeat.start();
@@ -182,15 +180,37 @@ public class MainServer {
             DatabaseManager finalDbManager = dbManager;
             ServerSocket finalClientSocket = clientSocket;
             ServerSocket finalDbSyncSocket = dbSyncSocket;
+            ServerConfig finalConfig = config; // <--- IMPORTANTE: Capturar a config para usar no lambda
 
             Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-                System.out.println("[MainServer] A desligar servidor (Shutdown Hook)...");
-                // TODO: Enviar SERVER_UNREGISTER para a diretoria se desejado
+                System.out.println("\n[MainServer] A desligar servidor (Shutdown Hook)...");
+
+                // 1. ENVIAR O PEDIDO DE UNREGISTER À DIRETORIA
+                try (DatagramSocket socket = new DatagramSocket()) {
+                    UDPMessage msg = new UDPMessage(MessageType.SERVER_UNREGISTER);
+                    byte[] data = SerializationUtils.serialize(msg);
+
+                    DatagramPacket packet = new DatagramPacket(
+                            data,
+                            data.length,
+                            finalConfig.getDirectoryAddress(),
+                            finalConfig.getDirectoryPort()
+                    );
+
+                    socket.send(packet);
+                    System.out.println("[MainServer] Pedido de remoção enviado à diretoria.");
+
+                } catch (Exception e) {
+                    System.err.println("[MainServer] Erro ao enviar unregister: " + e.getMessage());
+                }
+
+                // 2. FECHAR SOCKETS TCP (Limpeza Local)
                 try {
                     if (finalClientSocket != null && !finalClientSocket.isClosed()) finalClientSocket.close();
                     if (finalDbSyncSocket != null && !finalDbSyncSocket.isClosed()) finalDbSyncSocket.close();
                 } catch (Exception e) { System.err.println("[Shutdown Hook] Erro ao fechar sockets: " + e.getMessage()); }
 
+                // 3. FECHAR BD
                 if (finalDbManager != null) {
                     finalDbManager.disconnect();
                 }
@@ -205,7 +225,10 @@ public class MainServer {
                 if (clientSocket != null) clientSocket.close();
                 if (dbSyncSocket != null) dbSyncSocket.close();
                 if (dbManager != null) dbManager.disconnect();
-            } catch (Exception ex) { /* ignorar erros de fecho de emergência */ }
+            } catch (Exception ex) {  }
+
+        System.out.println("[MainServer] A terminar processo (System.exit).");
+        System.exit(1); // Garante que o Heartbeat e todas as threads morrem
         }
     }
 }

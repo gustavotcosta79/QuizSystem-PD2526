@@ -98,33 +98,17 @@ public class ServerListManager extends Thread {
             case CLIENT_REQUEST_SERVER: // Pedido do Cliente [cite: 149]
                 return getPrimaryServerClientInfo();
 
-            // --- NOVOS CASOS (EM COMENTÁRIO) ---
-
-            /*
-            [cite_start]// [cite: 145]
-            // Caso 4: Servidor a desligar-se de forma ordenada
-            // O servidor envia isto (sem payload) antes de fechar.
             case SERVER_UNREGISTER:
                 System.out.println("Pedido de anulação de registo de: " + senderAddress.getHostAddress());
-                // A ação é remover o servidor da lista
                 handleUnregister(senderAddress);
-                // Não precisa de resposta obrigatória, mas podemos enviar um OK
-                return new UDPMessage(MessageType.SERVER_REGISTER_OK); // Reutilizar o OK
-            */
+                // Podemos enviar um OK de cortesia, embora o servidor vá fechar
+                return new UDPMessage(MessageType.SERVER_REGISTER_OK);
 
-            /*
-            [cite_start]// [cite: 114]
-            // (Avançado) Caso 5: Servidor backup falhou a Sincronização da BD
-            // O servidor envia isto (sem payload) antes de terminar
+            // [cite: 114] Caso 5: Servidor backup falhou a Sincronização da BD
             case SERVER_SYNC_FAILED:
-                 System.out.println("Servidor backup falhou sync e vai sair: " + senderAddress.getHostAddress());
-                 // A ação é a mesma que o unregister
-                 handleUnregister(senderAddress);
-                 // Também não precisa de resposta, mas podemos ser simpáticos
-                 return new UDPMessage(MessageType.SERVER_REGISTER_OK);
-            */
-
-            // --- FIM DOS NOVOS CASOS ---
+                System.out.println("Servidor backup falhou sync e vai sair: " + senderAddress.getHostAddress());
+                handleUnregister(senderAddress);
+                return new UDPMessage(MessageType.SERVER_REGISTER_OK);
 
             default:
                 return new UDPMessage(MessageType.ERROR, "UNKNOWN_COMMAND");
@@ -134,18 +118,23 @@ public class ServerListManager extends Thread {
     /**
      * Regista um novo servidor ou atualiza o seu heartbeat se já existir.
      */
+    /**
+     * Regista um novo servidor ou atualiza o seu heartbeat se já existir.
+     */
     private void handleRegister(InetAddress address, int clientPort, int dbPort) {
         // O acesso à lista é sincronizado pelo 'synchronized' no processRequest
 
         // Tenta encontrar o servidor na lista
         for (ServerInfo info : serverList) {
-            if (info.getAddress().equals(address)) {
+            // --- ALTERAÇÃO AQUI ---
+            // Antes: if (info.getAddress().equals(address)) {
+            // Agora: Compara também o 'dbPort' para distinguir servidores no mesmo IP (localhost)
+            if (info.getAddress().equals(address) && info.getDbPort() == dbPort) {
+                // ----------------------
+
                 // Encontrado. Apenas atualiza o heartbeat.
                 info.touch();
-                // NOTA: No futuro, podes querer atualizar os portos aqui também,
-                // caso o servidor reinicie com portos diferentes.
-                // ex: info.updatePorts(clientPort, dbPort);
-                System.out.println("Heartbeat atualizado para: " + address.getHostAddress());
+                System.out.println("Heartbeat atualizado para: " + address.getHostAddress() + ":" + dbPort);
                 return;
             }
         }
@@ -153,7 +142,7 @@ public class ServerListManager extends Thread {
         // Não encontrado. Adiciona como um novo servidor no FIM da lista.
         ServerInfo newServer = new ServerInfo(address, clientPort, dbPort);
         serverList.add(newServer);
-        System.out.println("Novo servidor registado: " + address.getHostAddress() + " (Total: " + serverList.size() + ")");
+        System.out.println("Novo servidor registado: " + address.getHostAddress() + ":" + dbPort + " (Total: " + serverList.size() + ")");
     }
 
     // --- NOVA FUNÇÃO DE HANDLER (EM COMENTÁRIO) ---
@@ -224,6 +213,21 @@ public class ServerListManager extends Thread {
                 iterator.remove();
                 System.out.println("Servidor " + server.getAddress().getHostAddress() + " removido por timeout. (Total: " + serverList.size() + ")");
             }
+        }
+    }
+
+
+    /**
+     * Remove um servidor da lista, com base no seu endereço.
+     */
+    private void handleUnregister(InetAddress address) {
+        // O removeIf é uma forma limpa de iterar e remover
+        boolean removed = serverList.removeIf(server -> server.getAddress().equals(address));
+
+        if (removed) {
+            System.out.println("Servidor " + address.getHostAddress() + " removido a pedido. (Total: " + serverList.size() + ")");
+        } else {
+            System.out.println("Pedido de remoção ignorado: Servidor " + address.getHostAddress() + " não estava na lista.");
         }
     }
 }
