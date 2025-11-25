@@ -5,39 +5,45 @@ import pt.isec.pd.tp.g11.common.messages.TCPMessage;
 
 import java.io.ObjectInputStream;
 import java.util.concurrent.BlockingQueue;
+import java.util.function.Consumer;
 
 public class NotificationListener extends Thread {
     private final ObjectInputStream in;
     private final BlockingQueue<TCPMessage> responseQueue;
+    private final Consumer<String> notificationHandler; // CALLBACK PARA A GUI
 
-    // Recebe o stream de entrada e uma Fila para colocar as respostas normais
-    public NotificationListener(ObjectInputStream in, BlockingQueue<TCPMessage> responseQueue) {
+    // Construtor atualizado
+    public NotificationListener(ObjectInputStream in, BlockingQueue<TCPMessage> responseQueue, Consumer<String> notificationHandler) {
         this.in = in;
         this.responseQueue = responseQueue;
-        setDaemon(true); // Morre se a main thread morrer
+        this.notificationHandler = notificationHandler;
+        setDaemon(true);
     }
 
     @Override
     public void run() {
         try {
             while (!isInterrupted()) {
-                // ESTA É A ÚNICA LINHA QUE LÊ DO SOCKET EM TODO O CLIENTE
                 Object obj = in.readObject();
 
                 if (obj instanceof TCPMessage msg) {
                     if (msg.getType() == MessageType.NOTIFICATION) {
-                        // 1. É NOTIFICAÇÃO: Mostrar logo no ecrã!
                         String texto = (String) msg.getPayload();
-                        System.out.println("\n\n>>> [NOTIFICAÇÃO] " + texto + " <<<\n");
-                        System.out.print("Escolha: "); // Repor o prompt para ficar bonito
+
+                        // SE TIVERMOS UM HANDLER (GUI), CHAMAMOS. SENÃO, IMPRIME NA CONSOLA.
+                        if (notificationHandler != null) {
+                            notificationHandler.accept(texto);
+                        } else {
+                            System.out.println("\n\n>>> [NOTIFICAÇÃO] " + texto + " <<<\n");
+                        }
+
                     } else {
-                        // 2. É RESPOSTA A UM PEDIDO: Mandar para a fila
                         responseQueue.put(msg);
                     }
                 }
             }
         } catch (Exception e) {
-            // O socket fechou ou houve erro. O ServerConnection vai tratar disto no Failover.
+            // Socket fechado ou erro
         }
     }
 }
