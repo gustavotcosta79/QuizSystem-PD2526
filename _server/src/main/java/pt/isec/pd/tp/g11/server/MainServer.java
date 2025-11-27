@@ -153,7 +153,7 @@ public class MainServer {
 
             // 6. INICIAR OS SERVIÇOS DE BACKGROUND (THREADS)
 
-            // --- ALTERAÇÃO AQUI: O DbSyncListener arranca SEMPRE ---
+
             // Assim, se este backup virar Primary, já está pronto a enviar a BD.
             String currentDbPath = dbManager.getDbFilePath();
             if (currentDbPath != null) {
@@ -166,7 +166,7 @@ public class MainServer {
             HeartbeatService heartbeat = new HeartbeatService(config, clientPort, dbPort /*, dbManager */);
             heartbeat.start();
 
-// --- MODIFICAÇÃO PARA NOTIFICAÇÕES ASSÍNCRONAS ---
+            // --- MODIFICAÇÃO PARA NOTIFICAÇÕES ASSÍNCRONAS ---
             // 1. Criar a lista partilhada de clientes ativos (thread-safe)
             List<ClientHandler> activeClients = new CopyOnWriteArrayList<>();
 
@@ -174,8 +174,6 @@ public class MainServer {
             System.out.println("[MainServer] A iniciar ClientListener...");
             ClientListener clientListener = new ClientListener(clientSocket, dbManager, heartbeat, activeClients);
             clientListener.start();
-            // -------------------------------------------------
-
 
             // Iniciar MulticastListener
             MulticastListener mcListener = new MulticastListener(config.getMulticastAddress(), dbManager, dbPort);

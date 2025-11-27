@@ -197,12 +197,12 @@ public class ConsoleUI implements Runnable {
         int choice;
         do {
             System.out.println("\n--- Menu Docente (" + loggedInUser.getNome() + ") ---");
-            System.out.println("1. Criar Nova Pergunta"); // sincronizacao feita
-            System.out.println("2. Listar Minhas Perguntas"); //(leitura) Nao é preciso fazer sicronizacao
-            System.out.println("3. Editar Pergunta"); //sincronizacao feita
-            System.out.println("4. Eliminar Pergunta ");//sincronizacao feita
-            System.out.println("5. Ver Resultados de Pergunta Expirada"); // filtro para ver ou exportar para csv
-            System.out.println("6. Editar Registo Pessoal (Docente)\n"); //sincronizado
+            System.out.println("1. Criar Nova Pergunta");
+            System.out.println("2. Listar Minhas Perguntas");
+            System.out.println("3. Editar Pergunta");
+            System.out.println("4. Eliminar Pergunta ");
+            System.out.println("5. Ver Resultados de Pergunta Expirada");// filtro para ver ou exportar para csv
+            System.out.println("6. Editar Registo Pessoal (Docente)\n");
             System.out.println("0. Logout");
             System.out.print("Escolha: ");
 
@@ -260,14 +260,13 @@ public class ConsoleUI implements Runnable {
 
             switch (choice) {
                 case 1:
-                    handleAnswerQuestion(); // <<< CHAMAR O NOVO MÉTODO
+                    handleAnswerQuestion();
                     break;
                 case 2:
-
                      handleViewMyAnswers();
                     break;
                 case 3:
-                    handleEditProfileEstudante(); //
+                    handleEditProfileEstudante();
                     break;
                 case 0:
                     System.out.println("A fazer logout...");

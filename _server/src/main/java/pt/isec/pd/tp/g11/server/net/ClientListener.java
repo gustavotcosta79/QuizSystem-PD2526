@@ -22,9 +22,6 @@ public class ClientListener extends Thread {
         setName("ClientListener"); // Boa prática
     }
 
-    // O método stopListener() que tinhas pode ser útil no futuro
-    // public void stopListener() { ... }
-
     @Override
     public void run () {
         System.out.println("[ClientListener] A escutar clientes no porto " + serverSocket.getLocalPort());
@@ -35,7 +32,7 @@ public class ClientListener extends Thread {
 
                 System.out.println("[ClientListener] Novo cliente ligado: " + clientSocket.getInetAddress());
 
-                // Lança uma thread para tratar do cliente
+                // Lança uma thread para tratar de cada cliente
                 ClientHandler handler = new ClientHandler(clientSocket, dbManager, heartbeatService, activeClients);
                 handler.start();
             }

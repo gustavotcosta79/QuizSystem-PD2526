@@ -104,7 +104,6 @@ public class ServerConnection {
             this.out = new ObjectOutputStream(tcpSocket.getOutputStream());
             this.in = new ObjectInputStream(tcpSocket.getInputStream());
 
-            // --- ALTERAÇÃO: Passamos o callback (onNotification) para o Listener ---
             notificationListener = new NotificationListener(in, responseQueue, onNotification);
             notificationListener.start();
 

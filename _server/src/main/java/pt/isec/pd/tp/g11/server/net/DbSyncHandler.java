@@ -28,10 +28,6 @@ public class DbSyncHandler extends Thread {
 
             System.out.println("[DbSyncHandler] A iniciar envio da BD (" + dbFile.length() + " bytes)...");
 
-            // 2. (Opcional) Enviar o tamanho do ficheiro primeiro, se quiseres fazer barra de progresso no backup
-            // DataOutputStream dos = new DataOutputStream(out);
-            // dos.writeLong(dbFile.length());
-
             // 3. Ler do ficheiro e escrever no socket (Buffer de 4KB)
             byte[] buffer = new byte[4096];
             int bytesRead;

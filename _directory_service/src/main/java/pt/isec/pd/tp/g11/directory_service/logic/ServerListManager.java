@@ -56,7 +56,6 @@ public class ServerListManager extends Thread {
      * @return O objeto UDPMessage de resposta a ser enviado ao remetente.
      */
     public synchronized UDPMessage processRequest(UDPMessage message, InetAddress senderAddress) {
-        // ... (código igual)
 
         MessageType command = message.getType();
         String[] payload = message.getPayload();
@@ -77,14 +76,16 @@ public class ServerListManager extends Thread {
                     return new UDPMessage(MessageType.ERROR, "INVALID_PORT_NUMBER");
                 }
 
-            case SERVER_HEARTBEAT: // O heartbeat da HeartbeatService [cite: 126]
-                if (payload == null || payload.length != 3) { // <-- Alterar para 3
+            case SERVER_HEARTBEAT:
+                if (payload == null || payload.length != 3) {
+
                     return new UDPMessage(MessageType.ERROR, "INVALID_HEARTBEAT_FORMAT");
                 }
                 try {
                     int clientPort = Integer.parseInt(payload[0]);
                     int dbPort = Integer.parseInt(payload[1]);
-                    int dbVersion = Integer.parseInt(payload[2]); // Podes usar este 'int' no futuro
+                    int dbVersion = Integer.parseInt(payload[2]);
+
 
                     // O handleRegister faz o "touch" ou adiciona
                     handleRegister(senderAddress, clientPort, dbPort);
@@ -101,10 +102,9 @@ public class ServerListManager extends Thread {
             case SERVER_UNREGISTER:
                 System.out.println("Pedido de anulação de registo de: " + senderAddress.getHostAddress());
                 handleUnregister(senderAddress);
-                // Podemos enviar um OK de cortesia, embora o servidor vá fechar
+
                 return new UDPMessage(MessageType.SERVER_REGISTER_OK);
 
-            // [cite: 114] Caso 5: Servidor backup falhou a Sincronização da BD
             case SERVER_SYNC_FAILED:
                 System.out.println("Servidor backup falhou sync e vai sair: " + senderAddress.getHostAddress());
                 handleUnregister(senderAddress);
@@ -126,11 +126,8 @@ public class ServerListManager extends Thread {
 
         // Tenta encontrar o servidor na lista
         for (ServerInfo info : serverList) {
-            // --- ALTERAÇÃO AQUI ---
-            // Antes: if (info.getAddress().equals(address)) {
-            // Agora: Compara também o 'dbPort' para distinguir servidores no mesmo IP (localhost)
+
             if (info.getAddress().equals(address) && info.getDbPort() == dbPort) {
-                // ----------------------
 
                 // Encontrado. Apenas atualiza o heartbeat.
                 info.touch();
@@ -145,20 +142,6 @@ public class ServerListManager extends Thread {
         System.out.println("Novo servidor registado: " + address.getHostAddress() + ":" + dbPort + " (Total: " + serverList.size() + ")");
     }
 
-    // --- NOVA FUNÇÃO DE HANDLER (EM COMENTÁRIO) ---
-    /*
-     * Remove um servidor da lista, com base no seu endereço.
-     * (Usado por SERVER_UNREGISTER e SERVER_SYNC_FAILED)
-     */
-    /*
-    private void handleUnregister(InetAddress address) {
-        // O removeIf é uma forma limpa de iterar e remover
-        serverList.removeIf(server -> server.getAddress().equals(address));
-        System.out.println("Servidor " + address.getHostAddress() + " removido a pedido. (Total: " + serverList.size() + ")");
-    }
-    */
-    // --- FIM DA NOVA FUNÇÃO ---
-
 
     /**
      * Se for um Cliente a pedir, envia-se o Porto de Cliente.
@@ -171,7 +154,7 @@ public class ServerListManager extends Thread {
             return new UDPMessage(MessageType.ERROR, "NO_SERVERS_AVAILABLE");
         }
 
-        // O principal é o primeiro da lista (o mais antigo) [cite: 149]
+        // O principal é o primeiro da lista (o mais antigo)
         ServerInfo primary = serverList.get(0);
 
         // Responde com o tipo CLIENT_RESPONSE_SERVER e o payload [IP, PORTO]
@@ -208,7 +191,6 @@ public class ServerListManager extends Thread {
         while (iterator.hasNext()) {
             ServerInfo server = iterator.next();
 
-            // --- ESTA É A LINHA CORRIGIDA ---
             if (now - server.getLastHeartbeat() > SERVER_TIMEOUT_MS) {
                 iterator.remove();
                 System.out.println("Servidor " + server.getAddress().getHostAddress() + " removido por timeout. (Total: " + serverList.size() + ")");

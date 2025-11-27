@@ -148,54 +148,133 @@ public class DocentePane extends BorderPane {
         Dialog<Question> dialog = new Dialog<>();
         dialog.setTitle(existing == null ? "Nova Pergunta" : "Editar Pergunta");
         dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
+        dialog.setResizable(true); // Permitir redimensionar a janela
 
-        GridPane grid = new GridPane();
-        grid.setHgap(10); grid.setVgap(10); grid.setPadding(new Insets(20));
+        // 1. Criar um ScrollPane para o caso de ter muitas opções
+        ScrollPane scrollPane = new ScrollPane();
+        scrollPane.setFitToWidth(true);
+        scrollPane.setPrefHeight(450); // Altura confortável
 
+        VBox root = new VBox(10);
+        root.setPadding(new Insets(15));
+
+        // --- CAMPOS FIXOS (Enunciado e Datas) ---
         TextField txtEnun = new TextField(existing != null ? existing.getEnunciado() : "");
-        TextField txtStart = new TextField(existing != null ? existing.getBeginDateHour().format(DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm")) : "");
-        TextField txtEnd = new TextField(existing != null ? existing.getEndDateHour().format(DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm")) : "");
-        txtStart.setPromptText("dd-MM-yyyy HH:mm");
-        txtEnd.setPromptText("dd-MM-yyyy HH:mm");
+        txtEnun.setPromptText("Enunciado da Pergunta");
 
-        TextField txtOp1 = new TextField(); TextField txtOp2 = new TextField(); TextField txtOp3 = new TextField();
+        DateTimeFormatter fmt = DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm");
+        TextField txtStart = new TextField(existing != null ? existing.getBeginDateHour().format(fmt) : "");
+        txtStart.setPromptText("Início (dd-MM-yyyy HH:mm)");
+
+        TextField txtEnd = new TextField(existing != null ? existing.getEndDateHour().format(fmt) : "");
+        txtEnd.setPromptText("Fim (dd-MM-yyyy HH:mm)");
+
+        root.getChildren().addAll(
+                new Label("Enunciado:"), txtEnun,
+                new Label("Início (dd-MM-yyyy HH:mm):"), txtStart,
+                new Label("Fim (dd-MM-yyyy HH:mm):"), txtEnd,
+                new Separator()
+        );
+
+        // --- OPÇÕES DINÂMICAS ---
+        Label lblOp = new Label("Opções (Mínimo 2):");
+        VBox optionsBox = new VBox(5); // Caixa onde as opções vão aparecer
+        List<TextField> optionFields = new ArrayList<>(); // Lista para guardarmos os TextFields
+
+        // Função auxiliar para adicionar uma nova linha de opção
+        Runnable addOptionLine = () -> {
+            int index = optionFields.size();
+            char letter = (char) ('a' + index); // Gera 'a', 'b', 'c', etc.
+
+            TextField tf = new TextField();
+            tf.setPromptText("Texto da opção " + letter);
+            HBox.setHgrow(tf, javafx.scene.layout.Priority.ALWAYS);
+
+            Label lblLetter = new Label(letter + ")");
+            lblLetter.setMinWidth(25); // Força uma largura mínima de 25px
+            lblLetter.setAlignment(Pos.CENTER_RIGHT); // Fica mais bonito alinhado à direita
+
+            HBox row = new HBox(5, lblLetter, tf);
+            row.setAlignment(Pos.CENTER_LEFT);
+
+            optionsBox.getChildren().add(row);
+            optionFields.add(tf);
+        };
+
+        // Estado Inicial: Adiciona 2 opções vazias (mínimo obrigatório)
+        // Nota: Na edição, como a lista da tabela não traz as opções, começamos do zero
+        if (existing != null) {
+            model.fireNotification("Aviso: Na edição, deve reintroduzir as opções.");
+        }
+        addOptionLine.run(); // Opção A
+        addOptionLine.run(); // Opção B
+
+        // Botão para criar mais opções
+        Button btnAddOp = new Button("+ Adicionar Opção");
+        btnAddOp.setOnAction(e -> addOptionLine.run());
+
+        root.getChildren().addAll(lblOp, optionsBox, btnAddOp, new Separator());
+
+        // --- RESPOSTA CORRETA ---
         TextField txtCorrect = new TextField(existing != null ? existing.getCorrectAnswer() : "");
-        txtCorrect.setPromptText("a, b ou c");
+        txtCorrect.setPromptText("Ex: a");
 
-        // Se for edição, isto podia ser mais complexo para carregar opções, mas simplificamos
-        if (existing != null) model.fireNotification("Aviso: Na edição terá de reescrever as opções.");
+        root.getChildren().addAll(new Label("Letra da Opção Correta:"), txtCorrect);
 
-        grid.addRow(0, new Label("Enunciado:"), txtEnun);
-        grid.addRow(1, new Label("Início:"), txtStart);
-        grid.addRow(2, new Label("Fim:"), txtEnd);
-        grid.addRow(3, new Label("Opção A:"), txtOp1);
-        grid.addRow(4, new Label("Opção B:"), txtOp2);
-        grid.addRow(5, new Label("Opção C:"), txtOp3);
-        grid.addRow(6, new Label("Correta:"), txtCorrect);
+        // Finalizar a UI
+        scrollPane.setContent(root);
+        dialog.getDialogPane().setContent(scrollPane);
 
-        dialog.getDialogPane().setContent(grid);
-
+        // --- LÓGICA DE CONVERSÃO (Ler os dados) ---
         dialog.setResultConverter(btn -> {
             if (btn == ButtonType.OK) {
                 try {
-                    DateTimeFormatter fmt = DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm");
+                    // 1. Validar Datas
                     LocalDateTime start = LocalDateTime.parse(txtStart.getText(), fmt);
                     LocalDateTime end = LocalDateTime.parse(txtEnd.getText(), fmt);
 
-                    List<Option> ops = new ArrayList<>();
-                    ops.add(new Option("a", txtOp1.getText()));
-                    ops.add(new Option("b", txtOp2.getText()));
-                    ops.add(new Option("c", txtOp3.getText()));
+                    // 2. Recolher Opções Dinamicamente
+                    List<Option> newOptions = new ArrayList<>();
+                    for (int i = 0; i < optionFields.size(); i++) {
+                        String text = optionFields.get(i).getText().trim();
+                        if (text.isEmpty()) throw new Exception("A opção " + (char)('a'+i) + " está vazia.");
 
-                    return new Question(txtEnun.getText(), start, end, txtCorrect.getText(), ops);
+                        // Cria a opção com a letra correta (a, b, c...)
+                        newOptions.add(new Option(String.valueOf((char)('a' + i)), text));
+                    }
+
+                    if (newOptions.size() < 2) throw new Exception("Tem de ter pelo menos 2 opções.");
+
+                    // 3. Validar Resposta Certa
+                    String correct = txtCorrect.getText().trim().toLowerCase();
+                    if (correct.isEmpty()) throw new Exception("Indique qual é a letra correta.");
+
+                    boolean exists = false;
+                    for (Option op : newOptions) {
+                        if (op.getLetter().equals(correct)) {
+                            exists = true;
+                            break;
+                        }
+                    }
+
+                    if (!exists) {
+                        // Calcula a última letra disponível para ajudar o utilizador
+                        String maxLetter = newOptions.get(newOptions.size() - 1).getLetter();
+                        throw new Exception("Opção inválida! Só tem opções de 'a' até '" + maxLetter + "'.");
+                    }
+
+                    // Criar o objeto Question
+                    return new Question(txtEnun.getText(), start, end, correct, newOptions);
+
                 } catch (Exception e) {
-                    model.fireNotification("Dados inválidos: " + e.getMessage());
+                    model.fireNotification("Erro nos dados: " + e.getMessage());
                     return null;
                 }
             }
             return null;
         });
 
+        // --- ENVIAR PARA O SERVIDOR ---
         dialog.showAndWait().ifPresent(newQ -> {
             new Thread(() -> {
                 boolean success;
@@ -206,7 +285,7 @@ public class DocentePane extends BorderPane {
                 }
                 Platform.runLater(() -> {
                     if (success) {
-                        model.fireNotification("Sucesso!");
+                        model.fireNotification("Operação realizada com sucesso!");
                         refreshTable();
                     }
                 });
@@ -234,14 +313,37 @@ public class DocentePane extends BorderPane {
     private void showResultsWindow(ServerConnection.QuestionFullReport report) {
         Alert alert = new Alert(Alert.AlertType.INFORMATION);
         alert.setTitle("Resultados: " + report.question.getAccessCode());
-        alert.setHeaderText("Total Respostas: " + report.results.size());
+        alert.setHeaderText("Relatório de Respostas");
 
-        StringBuilder sb = new StringBuilder("Lista de Alunos:\n");
-        for(QuestionResult r : report.results) {
-            sb.append(r.getStudentName()).append(" -> ").append(r.getAnswerGiven()).append("\n");
+        // Construir o texto com a mesma riqueza de detalhes da Consola
+        StringBuilder sb = new StringBuilder();
+
+        // 1. Cabeçalho com detalhes da Pergunta
+        sb.append("--- Detalhes da Pergunta ---\n");
+        sb.append("Enunciado: ").append(report.question.getEnunciado()).append("\n");
+        sb.append("Opção Correta: ").append(report.question.getCorrectAnswer().toUpperCase()).append("\n");
+        sb.append("Total Respostas: ").append(report.results.size()).append("\n\n");
+
+        // 2. Lista de Resultados
+        sb.append("--- Respostas dos Alunos ---\n");
+        if (report.results.isEmpty()) {
+            sb.append("(Sem respostas para mostrar)");
+        } else {
+            for(QuestionResult r : report.results) {
+                // Formato: [2012345] Nome do Aluno (email@isec.pt) -> RESPOSTA
+                sb.append(String.format("[%s] %s (%s) -> %s\n",
+                        r.getStudentNumber(),
+                        r.getStudentName(),
+                        r.getStudentEmail(),
+                        r.getAnswerGiven().toUpperCase()));
+            }
         }
+
         TextArea area = new TextArea(sb.toString());
         area.setEditable(false);
+        area.setWrapText(true);
+        area.setPrefSize(500, 300); // Aumentar um pouco o tamanho da janela
+
         alert.getDialogPane().setContent(area);
 
         ButtonType btnCsv = new ButtonType("Exportar CSV");
@@ -259,15 +361,53 @@ public class DocentePane extends BorderPane {
         File file = fileChooser.showSaveDialog(getScene().getWindow());
 
         if (file != null) {
-            // Lógica de escrita CSV (adaptada da ConsoleUI)
             try (PrintWriter writer = new PrintWriter(new FileWriter(file))) {
-                writer.println("Nome;Email;Resposta");
-                for (QuestionResult r : report.results) {
-                    writer.println(r.getStudentName() + ";" + r.getStudentEmail() + ";" + r.getAnswerGiven());
+
+                // Extrair as variáveis para facilitar
+                Question q = report.question;
+                List<QuestionResult> results = report.results;
+
+                // Formatadores de data/hora (iguais à Consola)
+                DateTimeFormatter dateFmt = DateTimeFormatter.ofPattern("dd-MM-yyyy");
+                DateTimeFormatter timeFmt = DateTimeFormatter.ofPattern("HH:mm");
+
+                // --- SECÇÃO 1: Cabeçalho da Pergunta ---
+                writer.println("\"dia\";\"hora inicial\";\"hora final\";\"enunciado da pergunta\";\"opção certa\"");
+
+                writer.printf("\"%s\";\"%s\";\"%s\";\"%s\";\"%s\"\n",
+                        q.getBeginDateHour().format(dateFmt),
+                        q.getBeginDateHour().format(timeFmt),
+                        q.getEndDateHour().format(timeFmt),
+                        q.getEnunciado(),
+                        q.getCorrectAnswer()
+                );
+
+                writer.println();
+
+                // --- SECÇÃO 2: Opções ---
+                writer.println("\"opção\";\"texto da opção\"");
+                for (Option op : q.getOptions()) {
+                    writer.printf("\"%s\";\"%s\"\n", op.getLetter(), op.getTextOption());
                 }
-                model.fireNotification("Ficheiro guardado!");
+
+                writer.println();
+
+                // --- SECÇÃO 3: Respostas dos Alunos ---
+                writer.println("\"número de estudante\";\"nome\";\"e-mail\";\"resposta\"");
+
+                for (QuestionResult r : results) {
+                    writer.printf("\"%s\";\"%s\";\"%s\";\"%s\"\n",
+                            r.getStudentNumber(),
+                            r.getStudentName(),
+                            r.getStudentEmail(),
+                            r.getAnswerGiven()
+                    );
+                }
+
+                model.fireNotification("Ficheiro CSV guardado com sucesso!");
+
             } catch (Exception e) {
-                model.fireNotification("Erro ao gravar: " + e.getMessage());
+                model.fireNotification("Erro ao gravar ficheiro: " + e.getMessage());
             }
         }
     }

@@ -40,9 +40,6 @@ public class DatabaseManager {
                 folder.mkdirs(); // Cria a pasta se não existir
             }
 
-            // Define o caminho completo para o ficheiro da BD
-            // TODO: Implementar nomeação de ficheiros para backups
-            // Por agora, vamos usar um nome fixo.
             this.dbFilePath = dbFolderPath + File.separator + "pd_database.db";
 
             // Construir a string de conexão JDBC para SQLite
@@ -83,7 +80,7 @@ public class DatabaseManager {
      * Baseado na Figura 3 do enunciado.
      */
     private void createTablesIfNotExists() {
-        // Usar try-with-resources para garantir que o Statement fecha
+
         try (Statement stmt = connection.createStatement()) {
 
             // Tabela Configuracao
@@ -246,7 +243,7 @@ public class DatabaseManager {
                 String nome = rsDocente.getString("nome");
                 String storedHash = rsDocente.getString("password"); // O hash guardado na BD
 
-                // 2. ALTERAÇÃO NA LÓGICA: Verificar o hash
+                // 2. Verificar o hash
                 if (SecurityUtils.checkPassword(plainPassword, storedHash)) {
                     System.out.println("[DBManager] Login HASH bem-sucedido (Docente): " + email);
                     return new Docente(id, nome, email);
@@ -258,7 +255,7 @@ public class DatabaseManager {
         }
 
         // Se não encontrou (ou a password falhou), tentar na tabela Estudante
-        // 3. ALTERAÇÃO NA QUERY: Selecionar a password, procurar SÓ por email
+        // 3.Selecionar a password, procurar SÓ por email
         String sqlEstudante = "SELECT id, nome, numero, password FROM Estudante WHERE email = ?";
         try (PreparedStatement pstmtEstudante = connection.prepareStatement(sqlEstudante)) {
 
@@ -272,7 +269,7 @@ public class DatabaseManager {
                 String numero = rsEstudante.getString("numero");
                 String storedHash = rsEstudante.getString("password"); // O hash guardado na BD
 
-                // 4. ALTERAÇÃO NA LÓGICA: Verificar o hash
+                // 4.  Verificar o hash
                 if (SecurityUtils.checkPassword(plainPassword, storedHash)) {
                     System.out.println("[DBManager] Login HASH bem-sucedido (Estudante): " + email);
                     return new Estudante(id, nome, email, numero); // Confirma a ordem dos parâmetros!
@@ -338,7 +335,7 @@ public class DatabaseManager {
      * @return 0 (Sucesso), 1 (Falha - Código errado), 2 (Falha - Email duplicado/Erro)
      */
     public String registerDocente(Docente docente, String passwordHash, String codigoRegistoFornecido) {
-        if (connection == null) return null; // Erro genérico
+        if (connection == null) return null;
 
         // 1. Verificar o código de registo de docente
         String hashCodigoCorreto = getDocenteRegisterHash();
@@ -507,7 +504,7 @@ public class DatabaseManager {
             System.out.println("[DBManager] Resposta registada (v" + getDbVersion() + ")");
             return sql;
         }catch (java.sql.SQLException e) {
-            // Código 19 = Constraint Unique (Estudante já respondeu a esta pergunta)
+
             if (e.getErrorCode() == 19) {
                 System.err.println("[DBManager] Estudante já respondeu a esta pergunta.");
             } else {
@@ -519,15 +516,7 @@ public class DatabaseManager {
 
     }
 
-    // ... (depois do teu método createQuestion)
 
-    /**
-     * Procura uma pergunta pelo código de acesso E verifica se está ativa.
-     *
-     * @param accessCode O código da pergunta.
-     * @return O objeto Question (com a lista de Options) se estiver ativa, null caso contrário.
-     */
-    // ... (depois do teu método createQuestion)
 
     /**
      * Procura uma pergunta pelo código de acesso E verifica se está ativa.
@@ -538,12 +527,12 @@ public class DatabaseManager {
     public Question getActiveQuestionByCode(String accessCode) {
         if (connection == null) return null;
 
-        // --- CORREÇÃO DA QUERY SQL ---
+
                 // Usamos strftime para forçar o formato ISO (com 'T') a corresponder
                 // ao formato guardado pelo LocalDateTime.toString()
                 String sqlQuestion = "SELECT * FROM Pergunta WHERE codigoAcesso = ? AND " +
                 "strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime') BETWEEN dataHoraInicio AND dataHoraFim";
-        // --- FIM DA CORREÇÃO ---
+
 
         String sqlOptions = "SELECT letra, textoOpcao FROM Opcao WHERE idPergunta = ?";
 
@@ -562,11 +551,8 @@ public class DatabaseManager {
                 // Precisas de importar java.time.LocalDateTime
                 String respostaCerta = rsQuestion.getString("respostaCerta");
 
-                // --- MUDANÇA AQUI: Ler como String e fazer parse ---
-                // (Precisas de importar java.time.LocalDateTime)
                 java.time.LocalDateTime inicio = java.time.LocalDateTime.parse(rsQuestion.getString("dataHoraInicio"));
                 java.time.LocalDateTime fim = java.time.LocalDateTime.parse(rsQuestion.getString("dataHoraFim"));
-                // --- FIM DA MUDANÇA ---
 
                 // Agora, ir buscar as opções
                 try (PreparedStatement pstmtOptions = connection.prepareStatement(sqlOptions)) {
@@ -1013,8 +999,3 @@ public class DatabaseManager {
     }
 
 }
-
-    // --- Métodos Futuros ---
-    // public int getDbVersion() { ... }
-    // public void incrementDbVersion() { ... }
-    // etc...

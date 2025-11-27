@@ -27,9 +27,6 @@ public class SecurityUtils {
             return bytesToHex(hashBytes);
         } catch (NoSuchAlgorithmException e) {
             System.err.println("Algoritmo de Hashing não encontrado: " + e.getMessage());
-            // Em caso de falha, (não ideal) retorna o texto simples
-            // para que a falha seja óbvia. Numa app real, isto devia
-            // lançar uma exceção e parar o arranque.
             return text;
         }
     }

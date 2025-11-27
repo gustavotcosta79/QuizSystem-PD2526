@@ -43,11 +43,6 @@ public class HeartbeatService extends Thread {
         setName("HeartbeatService");
     }
 
-    public void stopHeartbeat() {
-        this.isRunning = false;
-        interrupt(); // Interrompe o Thread.sleep()
-    }
-
     public void sendUpdate(String sqlQuery, int newVersion) {
         try (DatagramSocket socket = new DatagramSocket()) {
             // Payload: {clientPort, dbPort, dbVersion, SQL_QUERY}
@@ -55,7 +50,7 @@ public class HeartbeatService extends Thread {
                     String.valueOf(serverClientPort),
                     String.valueOf(serverDbPort),
                     String.valueOf(newVersion),
-                    sqlQuery // <--- A query vai na posição 3
+                    sqlQuery
             };
 
             UDPMessage msg = new UDPMessage(MessageType.SERVER_HEARTBEAT, payload);
@@ -78,9 +73,7 @@ public class HeartbeatService extends Thread {
 
             while (isRunning) {
                 try {
-                    // TODO: Obter a versão da BD
-                    // int dbVersion = dbManager.getDbVersion();
-                    int dbVersion = 0; // Placeholder
+                    int dbVersion = 0; // variavel para controlar a versao da bd
 
                     // 2. Criar o payload (consistente com o ServerListManager)
                     String[] payload = {
@@ -93,17 +86,17 @@ public class HeartbeatService extends Thread {
                     byte[] data = SerializationUtils.serialize(msg);
 
                     // 4. Enviar pacote UNICAST (para o DirectoryService)
-                    //
+
                     DatagramPacket unicastPacket = new DatagramPacket(data, data.length, directoryAddress, directoryPort);
                     socket.send(unicastPacket);
 
                     // 5. Enviar pacote MULTICAST (para os outros Servidores)
-                    //
+
                     DatagramPacket multicastPacket = new DatagramPacket(data, data.length, multicastAddress, multicastPort);
                     socket.send(multicastPacket);
 
                     // 6. Esperar pela resposta (APENAS do diretório)
-                    //
+
                     byte[] buffer = new byte[4096];
                     DatagramPacket responsePacket = new DatagramPacket(buffer, buffer.length);
                     socket.setSoTimeout(2000);
@@ -111,11 +104,7 @@ public class HeartbeatService extends Thread {
                     socket.receive(responsePacket);
 
                     UDPMessage response = (UDPMessage) SerializationUtils.deserialize(responsePacket.getData());
-                    // TODO: Processar a resposta do diretório (saber quem é o principal)
-                    // String[] primaryInfo = response.getPayload();
-                    // System.out.println("[Heartbeat] Resposta do Dir: O primário é " + primaryInfo[0]);
 
-                    // --- CÓDIGO NOVO PARA LOG DE PROMOÇÃO ---
                     // Verifica se a resposta é válida (SERVER_REGISTER_OK contém info do líder)
                     if (response.getType() == MessageType.SERVER_REGISTER_OK) {
                         String[] primaryInfo = response.getPayload(); // [0]=IP, [1]=DbPort

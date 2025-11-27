@@ -117,8 +117,6 @@
                             handleGetQuestionResults(mainRequest);
                             break;
 
-                        // TODO: Adicionar outros cases (LIST_QUESTIONS, EDIT_QUESTION, etc.)
-
                         default:
                             System.out.println("[ClientHandler] Recebido pedido desconhecido: " + mainRequest.getType());
                     }
@@ -159,21 +157,8 @@
                 return;
             }
 
-            // TODO: Fazer a lógica real da Base de Dados
-            // User user = dbManager.checkLogin(credentials[0], credentials[1]);
-
-            // --- Exemplo Falso (para testar) ---
-                //User user = null;
-                //if (credentials[0].equals("docente@isec.pt") && credentials[1].equals("1234")) {
-                //    user = new Docente(1, "Docente Teste", "docente@isec.pt"); // Usar a classe Docente
-                //}
-            // --- Fim do Exemplo Falso ---
-
-            // --- ALTERAÇÃO PRINCIPAL: USAR O DBMANAGER ---
             System.out.println("[ClientHandler] A verificar login para: " + credentials[0]);
             User user = dbManager.checkLogin(credentials[0], credentials[1]); // <-- A chamada real!
-            // --- FIM DA ALTERAÇÃO ---
-
 
             if (user != null) {
                 this.authenticatedUser = user; // Guarda o utilizador autenticado
@@ -183,7 +168,6 @@
                 // Não fecha o socket aqui, deixa o 'run()' tratar disso
             }
         }
-
 
         /**
          * Trata de um pedido de registo de um novo estudante.
@@ -253,7 +237,7 @@
             String result = dbManager.registerDocente(docente, passwordHash, registerCode);
 
             // 3. Enviar resposta
-            if (result == null) { // Sucesso
+            if (result == null) {
                 out.writeObject(new TCPMessage(MessageType.REGISTER_FAILED, "Email já existente ou erro interno."));
             } else if (result.equals("WRONG_CODE")) {
                 // Caso "WRONG_CODE": O código de docente estava errado
@@ -328,7 +312,6 @@
          * Processa a submissão de uma resposta de um estudante.
          */
         private void handleSubmitAnswer(TCPMessage request) throws Exception {
-            // --- ALTERAÇÃO AQUI ---
             // Payload esperado: AnswerPayload
             if (!(request.getPayload() instanceof AnswerPayload)) {
                 out.writeObject(new TCPMessage(MessageType.SUBMIT_ANSWER_FAILED, "Payload inválido."));
@@ -336,7 +319,6 @@
             }
 
             AnswerPayload payload = (AnswerPayload) request.getPayload();
-            // --- FIM DA ALTERAÇÃO ---
 
             int idPergunta = payload.getIdPergunta();
             String respostaLetra = payload.getRespostaLetra();
@@ -454,8 +436,6 @@
                 out.writeObject(new TCPMessage(MessageType.DELETE_QUESTION_FAILED, "Erro: Pergunta não existe, não é sua, ou já tem respostas."));
             }
         }
-
-        // Em ClientHandler.java
 
         private void handleEditQuestion(TCPMessage request) throws Exception {
             // 1. Validar utilizador e payload
@@ -673,6 +653,4 @@
             }
         }
 
-        // TODO: Implementar  e handleRegisterDocente
-        // TODO: Implementar handleAuthenticatedRequest (o switch principal para utilizadores logados)
     }

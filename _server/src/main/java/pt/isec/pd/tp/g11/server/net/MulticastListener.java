@@ -6,10 +6,7 @@ import pt.isec.pd.tp.g11.common.utils.SerializationUtils;
 import pt.isec.pd.tp.g11.server.db.DatabaseManager;
 
 import java.io.IOException;
-import java.net.DatagramPacket;
-import java.net.InetAddress;
-import java.net.MulticastSocket;
-import java.net.NetworkInterface;
+import java.net.*;
 
 public class MulticastListener extends Thread {
     private final InetAddress multicastAddress;
@@ -28,7 +25,7 @@ public class MulticastListener extends Thread {
     public void run() {
         try (MulticastSocket socket = new MulticastSocket(port)) {
             // Juntar-se ao grupo (código moderno para Java mais recente, ou usar socket.joinGroup(address) se for Java antigo)
-            socket.joinGroup(new java.net.InetSocketAddress(multicastAddress, port), NetworkInterface.getByInetAddress(InetAddress.getLocalHost()));
+            socket.joinGroup(new InetSocketAddress(multicastAddress, port), NetworkInterface.getByInetAddress(InetAddress.getLocalHost()));
 
             System.out.println("[MulticastListener] A escutar em " + multicastAddress + ":" + port);
             byte[] buffer = new byte[65535]; // Buffer grande para SQL
@@ -73,7 +70,6 @@ public class MulticastListener extends Thread {
                 dbManager.executeReplicaQuery(sqlQuery);
             } else if (receivedVersion > currentVersion + 1) {
                 System.err.println("[MulticastListener] ERRO: Perdi sincronização! (Eu: " + currentVersion + ", Recebido: " + receivedVersion + ")");
-                // TODO: Aqui o backup deveria reiniciar ou pedir full sync novamente
             }
         }
     }
