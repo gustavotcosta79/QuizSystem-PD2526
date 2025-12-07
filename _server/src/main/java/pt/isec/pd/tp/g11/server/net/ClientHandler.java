@@ -446,7 +446,7 @@
             Question newQuestionData = (Question) payload[1];
             int idDocente = authenticatedUser.getId();
 
-            // Tentar editar (Chama o método real do DBManager)
+
             String sqlQuery = dbManager.editQuestion(accessCode, newQuestionData, idDocente);
 
             if (sqlQuery != null) {
