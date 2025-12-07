@@ -19,14 +19,14 @@ public class ClientListener extends Thread {
         this.dbManager = dbManager;
         this.heartbeatService = heartbeatService;
         this.activeClients = activeClients;
-        setName("ClientListener"); // Boa prática
+        setName("ClientListener");
     }
 
     @Override
     public void run () {
         System.out.println("[ClientListener] A escutar clientes no porto " + serverSocket.getLocalPort());
         try {
-            while (!isInterrupted() && !serverSocket.isClosed()) { // Melhor condição de loop
+            while (!isInterrupted() && !serverSocket.isClosed()) {
                 // Fica bloqueado aqui até um cliente se ligar
                 Socket clientSocket = serverSocket.accept();
 

@@ -15,7 +15,7 @@ public class MainJFX extends Application {
 
     @Override
     public void init() throws Exception {
-        // Assume localhost por defeito. Se quiseres argumentos: getParameters().getRaw()
+        // Assume localhost por defeito.
         String ip = "127.0.0.1";
         if (!getParameters().getRaw().isEmpty()) {
             ip = getParameters().getRaw().get(0).split(":")[0];

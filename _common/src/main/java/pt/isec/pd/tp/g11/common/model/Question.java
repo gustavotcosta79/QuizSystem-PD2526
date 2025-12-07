@@ -55,40 +55,20 @@ public class Question implements Serializable {
         return enunciado;
     }
 
-    public void setEnunciado(String newEnunciado) {
-        this.enunciado = newEnunciado;
-    }
-
     public LocalDateTime getBeginDateHour() {
         return beginDateHour;
-    }
-
-    public void setBeginDateHour(LocalDateTime newBeginDateHour) {
-        this.beginDateHour = newBeginDateHour;
     }
 
     public LocalDateTime getEndDateHour() {
         return endDateHour;
     }
 
-    public void setEndDateHour(LocalDateTime newEndDateHour) {
-        this.endDateHour = newEndDateHour;
-    }
-
     public String getCorrectAnswer() {
         return correctAnswer;
     }
 
-    public void setCorrectAnswer(String newCorrectAnswer) {
-        this.correctAnswer = correctAnswer;
-    }
-
     public List<Option> getOptions() {
         return options;
-    }
-
-    public void setOptions (List<Option> newOptions) {
-        this.options = newOptions;
     }
 
 }

@@ -9,7 +9,6 @@
 
 package pt.isec.pd.tp.g11.directory_service.logic;
 
-// Importa os teus ficheiros 'common'
 import pt.isec.pd.tp.g11.common.enums.MessageType;
 import pt.isec.pd.tp.g11.common.messages.UDPMessage;
 
@@ -20,17 +19,15 @@ import java.util.List;
 
 public class ServerListManager extends Thread {
 
-    // Timeout de 17 segundos, conforme o enunciado [cite: 150]
+    // Timeout de 17 segundos, conforme o enunciado
     public static final long SERVER_TIMEOUT_MS = 17000;
 
     // A lista de servidores. "LinkedList" é boa para
     // adicionar/remover rapidamente.
-    // A lista está ordenada por ordem de registo [cite: 147]
     private final List<ServerInfo> serverList = new LinkedList<>();
 
     public ServerListManager() {
-        // Define esta thread como "daemon" para que não impeça
-        // o programa de fechar.
+        // Define esta thread como "daemon" para que não impeça o programa de fechar.
         setDaemon(true);
     }
 
@@ -61,7 +58,7 @@ public class ServerListManager extends Thread {
         String[] payload = message.getPayload();
 
         switch (command) {
-            case SERVER_REGISTER: // APENAS o registo inicial do MainServer [cite: 87, 88]
+            case SERVER_REGISTER: // APENAS o registo inicial do MainServer
                 if (payload == null || payload.length != 2) {
                     return new UDPMessage(MessageType.ERROR, "INVALID_REGISTER_FORMAT");
                 }
@@ -84,10 +81,9 @@ public class ServerListManager extends Thread {
                 try {
                     int clientPort = Integer.parseInt(payload[0]);
                     int dbPort = Integer.parseInt(payload[1]);
-                    int dbVersion = Integer.parseInt(payload[2]);
 
 
-                    // O handleRegister faz o "touch" ou adiciona
+                    // O handleRegister faz o "touch"(atualizar timestamp) ou adiciona
                     handleRegister(senderAddress, clientPort, dbPort);
 
                     // Responde com o servidor principal atual
@@ -96,7 +92,7 @@ public class ServerListManager extends Thread {
                     return new UDPMessage(MessageType.ERROR, "INVALID_PORT_NUMBER");
                 }
 
-            case CLIENT_REQUEST_SERVER: // Pedido do Cliente [cite: 149]
+            case CLIENT_REQUEST_SERVER: // Pedido do Cliente
                 return getPrimaryServerClientInfo();
 
             case SERVER_UNREGISTER:

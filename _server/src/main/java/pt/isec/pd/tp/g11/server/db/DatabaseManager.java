@@ -177,24 +177,21 @@ public class DatabaseManager {
                      PreparedStatement docenteStmt = connection.prepareStatement(insertDocenteSql);
                      PreparedStatement estudanteStmt = connection.prepareStatement(insertEstudanteSql)) {
 
-                    // 1. Inserir Configuração Inicial (com hash)
+                    // Inserir Configuração Inicial (com hash)
                     configStmt.setInt(1, 0);
-                    // 2. ALTERAÇÃO AQUI
                     configStmt.setString(2, SecurityUtils.hashPassword("CODIGO_DOCENTE_123")); //
                     configStmt.executeUpdate();
 
-                    // 2. Inserir Docente de Teste (com hash)
+                    // Inserir Docente de Teste (com hash)
                     docenteStmt.setString(1, "Docente Teste");
                     docenteStmt.setString(2, "docente@isec.pt");
-                    // 3. ALTERAÇÃO AQUI
                     docenteStmt.setString(3, SecurityUtils.hashPassword("1234")); // Guarda o hash, não "1234"
                     docenteStmt.executeUpdate();
 
-                    // 3. Inserir Estudante de Teste (com hash)
+                    // Inserir Estudante de Teste (com hash)
                     estudanteStmt.setString(1, "123456");
                     estudanteStmt.setString(2, "Estudante Teste");
                     estudanteStmt.setString(3, "aluno@isec.pt");
-                    // 4. ALTERAÇÃO AQUI
                     estudanteStmt.setString(4, SecurityUtils.hashPassword("senha")); // Guarda o hash, não "senha"
                     estudanteStmt.executeUpdate();
 
@@ -215,7 +212,6 @@ public class DatabaseManager {
         }
     }
 
-    // --- Métodos Futuros ---
 
     /**
      * Verifica as credenciais de login na base de dados USANDO HASHES.
@@ -230,7 +226,7 @@ public class DatabaseManager {
         }
 
         // Tentar encontrar na tabela Docente
-        // 1. ALTERAÇÃO NA QUERY: Selecionar a password, procurar SÓ por email
+        //  Selecionar a password, procurar SÓ por email
         String sqlDocente = "SELECT id, nome, password FROM Docente WHERE email = ?";
         try (PreparedStatement pstmtDocente = connection.prepareStatement(sqlDocente)) {
 
@@ -243,7 +239,7 @@ public class DatabaseManager {
                 String nome = rsDocente.getString("nome");
                 String storedHash = rsDocente.getString("password"); // O hash guardado na BD
 
-                // 2. Verificar o hash
+                // Verificar o hash
                 if (SecurityUtils.checkPassword(plainPassword, storedHash)) {
                     System.out.println("[DBManager] Login HASH bem-sucedido (Docente): " + email);
                     return new Docente(id, nome, email);
@@ -255,7 +251,7 @@ public class DatabaseManager {
         }
 
         // Se não encontrou (ou a password falhou), tentar na tabela Estudante
-        // 3.Selecionar a password, procurar SÓ por email
+        // Selecionar a password, procurar SÓ por email
         String sqlEstudante = "SELECT id, nome, numero, password FROM Estudante WHERE email = ?";
         try (PreparedStatement pstmtEstudante = connection.prepareStatement(sqlEstudante)) {
 
@@ -269,7 +265,7 @@ public class DatabaseManager {
                 String numero = rsEstudante.getString("numero");
                 String storedHash = rsEstudante.getString("password"); // O hash guardado na BD
 
-                // 4.  Verificar o hash
+                // Verificar o hash
                 if (SecurityUtils.checkPassword(plainPassword, storedHash)) {
                     System.out.println("[DBManager] Login HASH bem-sucedido (Estudante): " + email);
                     return new Estudante(id, nome, email, numero); // Confirma a ordem dos parâmetros!
@@ -337,7 +333,7 @@ public class DatabaseManager {
     public String registerDocente(Docente docente, String passwordHash, String codigoRegistoFornecido) {
         if (connection == null) return null;
 
-        // 1. Verificar o código de registo de docente
+        // Verificar o código de registo de docente
         String hashCodigoCorreto = getDocenteRegisterHash();
         if (hashCodigoCorreto == null) {
             System.err.println("[DBManager] Falha no registo: Não foi possível obter o hash do código da BD.");
@@ -377,7 +373,6 @@ public class DatabaseManager {
      * @return Um código de 6 caracteres alfanuméricos.
      */
     private String generateAccessCode() {
-        // TODO: Verificar se o código já existe na BD
         String chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
         StringBuilder code = new StringBuilder();
         java.util.Random rnd = new java.util.Random();
@@ -399,7 +394,7 @@ public class DatabaseManager {
     public String[] createQuestion(Question question, int idDocente) {
         if (connection == null) return null;
 
-        String accessCode = generateAccessCode(); // O teu método existente
+        String accessCode = generateAccessCode();
         StringBuilder sqlParaBackup = new StringBuilder(); // Aqui vamos construir a string gigante
 
         // Vamos envolver tudo numa transação para o Backup
@@ -432,7 +427,7 @@ public class DatabaseManager {
 
             if (idPerguntaGerado == -1) throw new java.sql.SQLException("Falha ao obter ID da pergunta.");
 
-            // --- CONSTRUIR SQL DA PERGUNTA PARA O BACKUP ---
+            // CONSTRUIR SQL DA PERGUNTA PARA O BACKUP
             // Aqui escrevemos os valores literais na string
             String sqlPerguntaBackup = String.format("INSERT INTO Pergunta(idDocente, codigoAcesso, enunciado, dataHoraInicio, dataHoraFim, respostaCerta) VALUES (%d, '%s', '%s', '%s', '%s', '%s');",
                     idDocente, accessCode, question.getEnunciado(),
@@ -441,7 +436,7 @@ public class DatabaseManager {
 
             sqlParaBackup.append(sqlPerguntaBackup);
 
-            // 2. Inserir as Opções
+            // Inserir as Opções
             String sqlInsertOpcao = "INSERT INTO Opcao(idPergunta, letra, textoOpcao) VALUES (?, ?, ?)";
 
             try (java.sql.PreparedStatement pstmtOp = connection.prepareStatement(sqlInsertOpcao)) {
@@ -452,7 +447,7 @@ public class DatabaseManager {
                     pstmtOp.setString(3, option.getTextOption());
                     pstmtOp.executeUpdate();
 
-                    // --- CONSTRUIR SQL DA OPÇÃO PARA O BACKUP ---
+                    // CONSTRUIR SQL DA OPÇÃO PARA O BACKUP
                     // IMPORTANTE: Usamos o 'idPerguntaGerado' explicitamente!
                     String sqlOpcaoBackup = String.format("INSERT INTO Opcao(idPergunta, letra, textoOpcao) VALUES (%d, '%s', '%s');",
                             idPerguntaGerado, option.getLetter(), option.getTextOption());
@@ -548,13 +543,12 @@ public class DatabaseManager {
                 // Se encontrámos a pergunta, ela está ativa. Vamos preencher o objeto.
                 int idPergunta = rsQuestion.getInt("id");
                 String enunciado = rsQuestion.getString("enunciado");
-                // Precisas de importar java.time.LocalDateTime
                 String respostaCerta = rsQuestion.getString("respostaCerta");
 
                 java.time.LocalDateTime inicio = java.time.LocalDateTime.parse(rsQuestion.getString("dataHoraInicio"));
                 java.time.LocalDateTime fim = java.time.LocalDateTime.parse(rsQuestion.getString("dataHoraFim"));
 
-                // Agora, ir buscar as opções
+                // vamos buscar as opcoes
                 try (PreparedStatement pstmtOptions = connection.prepareStatement(sqlOptions)) {
                     pstmtOptions.setInt(1, idPergunta);
                     ResultSet rsOptions = pstmtOptions.executeQuery();
@@ -569,9 +563,7 @@ public class DatabaseManager {
                 question.setAccessCode(accessCode);
                 question.setIdDocente(rsQuestion.getInt("idDocente"));
             }
-            // Se rsQuestion.next() for false, a pergunta não existe ou não está ativa
-            // (porque o código está errado OU o período de tempo está errado)
-            // e o método devolve null.
+
 
         } catch (SQLException e) {
             System.err.println("[DBManager] Erro ao procurar pergunta por código: " + e.getMessage());
@@ -595,8 +587,6 @@ public class DatabaseManager {
         // Começamos a query SQL básica
         String sql = "SELECT * FROM Pergunta WHERE idDocente = ?";
 
-        // Adicionamos os filtros de tempo
-        //String now = "datetime('now', 'localtime')"; BUGADO
         String now = "strftime('%Y-%m-%dT%H:%M:%S', 'now', 'localtime')";
         switch (filter.toUpperCase()) {
             case "ACTIVE": // Ativas: now ESTÁ entre inicio e fim
@@ -631,7 +621,7 @@ public class DatabaseManager {
                 // NOTA: Esta query NÃO carrega as Opções.
                 // É mais eficiente carregar as opções só se o utilizador
                 // quiser ver os detalhes de UMA pergunta.
-                // Por agora, a lista de opções fica vazia.
+
                 List<Option> options = new ArrayList<>();
 
                 Question q = new Question(enunciado, inicio, fim, respostaCerta, options);
@@ -690,10 +680,10 @@ public class DatabaseManager {
     public String deleteQuestion(String accessCode, int idDocente) {
         if (connection == null) return null;
 
-        // 1. Query SQL para enviar ao Backup (é mais simples)
+        // Query SQL para enviar ao Backup (é mais simples)
         String replicaSql = String.format("DELETE FROM Pergunta WHERE codigoAcesso = '%s'", accessCode);
 
-        // 2. Query SQL para executar localmente (inclui todas as regras de negócio)
+        // Query SQL para executar localmente (inclui todas as regras de negócio)
         String localDeleteSql = "DELETE FROM Pergunta " +
                 "WHERE codigoAcesso = ? AND idDocente = ? " +
                 "AND NOT EXISTS (SELECT 1 FROM Resposta WHERE Resposta.idPergunta = Pergunta.id)";
@@ -741,7 +731,7 @@ public class DatabaseManager {
         int idPergunta = -1;
 
         try {
-            // --- Verificação ---
+            // Verificação
             try (PreparedStatement pstmtCheck = connection.prepareStatement(checkSql)) {
                 pstmtCheck.setString(1, accessCode);
                 pstmtCheck.setInt(2, idDocente);
@@ -755,10 +745,10 @@ public class DatabaseManager {
                 }
             }
 
-            // --- Se a verificação passou, preparamos a transação local ---
+            // Se a verificação passou, preparamos a transação local
             connection.setAutoCommit(false);
 
-            // 2. SQL de UPDATE para a Pergunta
+            // SQL de UPDATE para a Pergunta
             String updatePerguntaSql = String.format("UPDATE Pergunta SET enunciado = '%s', dataHoraInicio = '%s', dataHoraFim = '%s', respostaCerta = '%s' WHERE id = %d;",
                     newQuestion.getEnunciado(), newQuestion.getBeginDateHour().toString(),
                     newQuestion.getEndDateHour().toString(), newQuestion.getCorrectAnswer(), idPergunta);
@@ -768,14 +758,14 @@ public class DatabaseManager {
                 stmt.executeUpdate(updatePerguntaSql);
             }
 
-            // 3. SQL de DELETE para as Opções ANTIGAS
+            // SQL de DELETE para as Opções ANTIGAS
             String deleteOpcoesSql = String.format("DELETE FROM Opcao WHERE idPergunta = %d;", idPergunta);
             replicaSql.append(deleteOpcoesSql);
             try (Statement stmt = connection.createStatement()) {
                 stmt.executeUpdate(deleteOpcoesSql);
             }
 
-            // 4. SQL de INSERT para as Opções NOVAS
+            // SQL de INSERT para as Opções NOVAS
             for (Option option : newQuestion.getOptions()) {
                 String insertOpcaoSql = String.format("INSERT INTO Opcao(idPergunta, letra, textoOpcao) VALUES (%d, '%s', '%s');",
                         idPergunta, option.getLetter(), option.getTextOption());
@@ -786,7 +776,7 @@ public class DatabaseManager {
                 }
             }
 
-            // --- Fim da Transação ---
+            // Fim da Transação
             replicaSql.append("COMMIT;");
             connection.commit(); // Confirma a transação local
             incrementDbVersion();
@@ -815,21 +805,21 @@ public class DatabaseManager {
     public String updateDocente(Docente docente, String passwordHash) {
         if (connection == null) return null;
 
-        // 1. Construir a query SQL
+        // Construir a query SQL
         String sql = String.format("UPDATE Docente SET nome = '%s', email = '%s'",
                 docente.getNome(),
                 docente.getEmail()
         );
 
-        // 2. Adicionar a password à query SÓ se foi fornecida uma nova
+        // Adicionar a password à query SÓ se foi fornecida uma nova
         if (passwordHash != null && !passwordHash.isEmpty()) {
             sql += String.format(", password = '%s'", passwordHash);
         }
 
-        // 3. Adicionar a condição WHERE (MUITO IMPORTANTE)
+        // Adicionar a condição WHERE (MUITO IMPORTANTE)
         sql += String.format(" WHERE id = %d", docente.getId());
 
-        // 4. Executar e replicar
+        //  Executar e replicar
         try (Statement stmt = connection.createStatement()) {
             stmt.executeUpdate(sql);
             incrementDbVersion();
@@ -850,22 +840,22 @@ public class DatabaseManager {
     public String updateEstudante(Estudante estudante, String passwordHash) {
         if (connection == null) return null;
 
-        // 1. Construir a query SQL
+        // Construir a query SQL
         String sql = String.format("UPDATE Estudante SET nome = '%s', email = '%s', numero = '%s'",
                 estudante.getNome(),
                 estudante.getEmail(),
                 estudante.getStudentNumber()
         );
 
-        // 2. Adicionar a password à query SÓ se foi fornecida uma nova
+        // Adicionar a password à query SÓ se foi fornecida uma nova
         if (passwordHash != null && !passwordHash.isEmpty()) {
             sql += String.format(", password = '%s'", passwordHash);
         }
 
-        // 3. Adicionar a condição WHERE (MUITO IMPORTANTE)
+        // Adicionar a condição WHERE (MUITO IMPORTANTE)
         sql += String.format(" WHERE id = %d", estudante.getId());
 
-        // 4. Executar e replicar
+        // Executar e replicar
         try (Statement stmt = connection.createStatement()) {
             stmt.executeUpdate(sql);
             incrementDbVersion();

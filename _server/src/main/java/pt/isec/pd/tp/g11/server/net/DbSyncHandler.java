@@ -19,7 +19,7 @@ public class DbSyncHandler extends Thread {
         try (OutputStream out = socket.getOutputStream();
              FileInputStream fileIn = new FileInputStream(dbFile)) {
 
-            // 1. Verificar se o ficheiro existe
+            // Verificar se o ficheiro existe
             if (!dbFile.exists()) {
                 System.err.println("[DbSyncHandler] Erro crítico: O ficheiro de BD não existe em " + dbFilePath);
                 socket.close();
@@ -28,7 +28,7 @@ public class DbSyncHandler extends Thread {
 
             System.out.println("[DbSyncHandler] A iniciar envio da BD (" + dbFile.length() + " bytes)...");
 
-            // 3. Ler do ficheiro e escrever no socket (Buffer de 4KB)
+            //  Ler do ficheiro e escrever no socket (Buffer de 4KB)
             byte[] buffer = new byte[4096];
             int bytesRead;
             while ((bytesRead = fileIn.read(buffer)) != -1) {

@@ -24,19 +24,15 @@ public class HeartbeatService extends Thread {
     private final InetAddress multicastAddress;
     private final int multicastPort = 3030; // Fixo, conforme PDF
 
-    // TODO: private final DatabaseManager dbManager;
     boolean wasPrimary = false;
     private boolean isRunning = true;
 
-    // Construtor atualizado para receber a Config
     public HeartbeatService(ServerConfig config, int serverClientPort, int serverDbPort /*, DatabaseManager dbManager */) {
         this.directoryAddress = config.getDirectoryAddress();
         this.directoryPort = config.getDirectoryPort();
         this.multicastAddress = config.getMulticastAddress();
         this.serverClientPort = serverClientPort;
         this.serverDbPort = serverDbPort;
-        // this.dbManager = dbManager;
-
 
 
         setDaemon(true);
@@ -75,7 +71,7 @@ public class HeartbeatService extends Thread {
                 try {
                     int dbVersion = 0; // variavel para controlar a versao da bd
 
-                    // 2. Criar o payload (consistente com o ServerListManager)
+                    // Criar o payload (consistente com o ServerListManager)
                     String[] payload = {
                             String.valueOf(serverClientPort),
                             String.valueOf(serverDbPort),
@@ -85,17 +81,17 @@ public class HeartbeatService extends Thread {
 
                     byte[] data = SerializationUtils.serialize(msg);
 
-                    // 4. Enviar pacote UNICAST (para o DirectoryService)
+                    // Enviar pacote UNICAST (para o DirectoryService)
 
                     DatagramPacket unicastPacket = new DatagramPacket(data, data.length, directoryAddress, directoryPort);
                     socket.send(unicastPacket);
 
-                    // 5. Enviar pacote MULTICAST (para os outros Servidores)
+                    // Enviar pacote MULTICAST (para os outros Servidores)
 
                     DatagramPacket multicastPacket = new DatagramPacket(data, data.length, multicastAddress, multicastPort);
                     socket.send(multicastPacket);
 
-                    // 6. Esperar pela resposta (APENAS do diretório)
+                    // Esperar pela resposta (APENAS do diretório)
 
                     byte[] buffer = new byte[4096];
                     DatagramPacket responsePacket = new DatagramPacket(buffer, buffer.length);
@@ -116,7 +112,7 @@ public class HeartbeatService extends Thread {
                             boolean amIPrimary = (reportedPrimaryPort == serverDbPort);
 
                             // A LÓGICA DO LOG:
-                            // Se eu NÃO era primary na última verificação, e AGORA SOU...
+                            // Se eu NÃO era primary na última verificação, e agora sou...
                             if (amIPrimary && !wasPrimary) {
                                 System.out.println("\n=================================================");
                                 System.out.println("[Heartbeat] >>> FUI PROMOVIDO A SERVIDOR PRINCIPAL! <<<");
@@ -129,7 +125,7 @@ public class HeartbeatService extends Thread {
                     }
                     // ----------------------------------------
 
-                    // 7. Dormir 5 segundos
+                    // Dormir 5 segundos
                     Thread.sleep(HEARTBEAT_INTERVAL_MS);
 
                 } catch (InterruptedException e) {

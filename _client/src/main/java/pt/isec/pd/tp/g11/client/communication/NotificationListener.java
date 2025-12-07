@@ -12,7 +12,7 @@ public class NotificationListener extends Thread {
     private final BlockingQueue<TCPMessage> responseQueue;
     private final Consumer<String> notificationHandler; // CALLBACK PARA A GUI
 
-    // Construtor atualizado
+
     public NotificationListener(ObjectInputStream in, BlockingQueue<TCPMessage> responseQueue, Consumer<String> notificationHandler) {
         this.in = in;
         this.responseQueue = responseQueue;

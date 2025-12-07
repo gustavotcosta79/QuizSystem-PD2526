@@ -5,7 +5,6 @@ import pt.isec.pd.tp.g11.common.messages.UDPMessage;
 import pt.isec.pd.tp.g11.common.utils.SerializationUtils;
 import pt.isec.pd.tp.g11.server.db.DatabaseManager;
 
-import java.io.IOException;
 import java.net.*;
 
 public class MulticastListener extends Thread {

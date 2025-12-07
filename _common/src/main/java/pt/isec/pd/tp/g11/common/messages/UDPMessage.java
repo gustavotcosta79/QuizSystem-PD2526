@@ -16,7 +16,7 @@ public class UDPMessage implements Serializable {
     private static final long serialVersionUID = 1L; // Importante para serialização
 
     private final MessageType type;
-    private final String[] payload; // Usar String[] é flexível para enviar dados
+    private final String[] payload;
 
     public UDPMessage(MessageType type, String... payload) {
         this.type = type;

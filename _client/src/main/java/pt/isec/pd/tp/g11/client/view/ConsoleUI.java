@@ -84,7 +84,7 @@ public class ConsoleUI implements Runnable {
         } while (choice != 0);
     }
 
-    // --- MÉTODOS DE AUTENTICAÇÃO (iguais aos teus) ---
+    // MÉTODOS DE AUTENTICAÇÃO
 
     private void handleLogin() {
         System.out.println("\n--- Login ---");
@@ -176,7 +176,7 @@ public class ConsoleUI implements Runnable {
         }
     }
 
-    // --- NOVOS MÉTODOS (MENU LOGADO) ---
+    //  NOVOS MÉTODOS (MENU LOGADO)
 
     /**
      * Menu principal para um utilizador que já fez login.
@@ -286,11 +286,11 @@ public class ConsoleUI implements Runnable {
     private void handleCreateQuestion() {
         System.out.println("\n--- Criar Nova Pergunta ---");
         try {
-            // 1. Recolher dados da Pergunta
+            // Recolher dados da Pergunta
             System.out.print("Enunciado: ");
             String enunciado = scanner.nextLine();
 
-            // 2. Recolher Opções
+            // Recolher Opções
             List<Option> options = new ArrayList<>();
             System.out.print("Quantas opções? (Min 2): ");
             int numOpcoes = Integer.parseInt(scanner.nextLine());
@@ -310,8 +310,8 @@ public class ConsoleUI implements Runnable {
             System.out.print("Qual a opção correta? (ex: 'a'): ");
             String respostaCerta = scanner.nextLine().trim().toLowerCase();
 
-            // 3. Recolher Datas
-            //
+            // Recolher Datas
+
             DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm");
 
             System.out.print("Data/Hora de Início (dd-MM-yyyy HH:mm): ");
@@ -325,15 +325,13 @@ public class ConsoleUI implements Runnable {
                 return;
             }
 
-            // 4. Criar o objeto Question
+            // Criar o objeto Question
             Question newQuestion = new Question(enunciado, inicio, fim, respostaCerta, options);
 
-            // 5. Chamar o componente de comunicação
+            // Chamar o componente de comunicação
             System.out.println("A enviar pergunta para o servidor...");
 
-            // TODO: Criar o método 'createQuestion' no ServerConnection
             String accessCode = connection.createQuestion(newQuestion);
-            //String accessCode = "ABC123_TESTE"; // Placeholder
 
             if (accessCode != null) {
                 System.out.println("Pergunta criada com sucesso!");
@@ -360,17 +358,17 @@ public class ConsoleUI implements Runnable {
         System.out.print("Insira o Código de Acesso da Pergunta: ");
         String accessCode = scanner.nextLine().trim().toUpperCase();
 
-        // 1. Pedir a pergunta ao servidor
+        // Pedir a pergunta ao servidor
         System.out.println("A procurar a pergunta...");
         Question q = connection.getQuestionByCode(accessCode);
 
-        // 2. Verificar se a pergunta é válida
+        // Verificar se a pergunta é válida
         if (q == null) {
             System.err.println("Pergunta não encontrada. O código pode estar errado ou a pergunta pode não estar ativa.");
             return;
         }
 
-        // 3. Mostrar a pergunta e as opções
+        // Mostrar a pergunta e as opções
         System.out.println("\nPERGUNTA ENCONTRADA!");
         System.out.println("---------------------------------");
         System.out.println("Enunciado: " + q.getEnunciado());
@@ -382,7 +380,7 @@ public class ConsoleUI implements Runnable {
         System.out.print("A sua resposta (ex: 'a'): ");
         String resposta = scanner.nextLine().trim().toLowerCase();
 
-        // 4. Submeter a resposta
+        // Submeter a resposta
         System.out.println("A submeter resposta...");
         if (connection.submitAnswer(q.getId(), resposta)) {
             System.out.println("Resposta submetida com sucesso!");
@@ -411,7 +409,7 @@ public class ConsoleUI implements Runnable {
                 case 3: filter = "FUTURE"; break;
                 case 4: filter = "PAST"; break;
             }
-        } catch (Exception e) { /* Usa o default "ALL" */ }
+        } catch (Exception e) {  }
 
         System.out.println("A obter perguntas do servidor...");
         List<Question> questions = connection.getMyQuestions(filter);
@@ -477,18 +475,14 @@ public class ConsoleUI implements Runnable {
             return;
         }
 
-        // Opcional: Podes primeiro ir buscar a pergunta (getQuestionByCode)
-        // para mostrar os dados atuais, mas vamos implementar a edição direta
-        // em que o utilizador tem de re-inserir tudo.
-
         try {
             System.out.println("--- Insira os NOVOS dados para a pergunta " + accessCode + " ---");
 
-            // 1. Recolher novos dados da Pergunta
+            // Recolher novos dados da Pergunta
             System.out.print("Novo Enunciado: ");
             String enunciado = scanner.nextLine();
 
-            // 2. Recolher Novas Opções
+            // Recolher Novas Opções
             List<Option> options = new ArrayList<>();
             System.out.print("Quantas opções? (Min 2): ");
             int numOpcoes = Integer.parseInt(scanner.nextLine());
@@ -508,7 +502,7 @@ public class ConsoleUI implements Runnable {
             System.out.print("Qual a nova opção correta? (ex: 'a'): ");
             String respostaCerta = scanner.nextLine().trim().toLowerCase();
 
-            // 3. Recolher Novas Datas
+            // Recolher Novas Datas
             DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd-MM-yyyy HH:mm");
             System.out.print("Nova Data/Hora de Início (dd-MM-yyyy HH:mm): ");
             LocalDateTime inicio = LocalDateTime.parse(scanner.nextLine(), formatter);
@@ -520,10 +514,10 @@ public class ConsoleUI implements Runnable {
                 return;
             }
 
-            // 4. Criar o objeto Question com os novos dados
+            // Criar o objeto Question com os novos dados
             Question newQuestionData = new Question(enunciado, inicio, fim, respostaCerta, options);
 
-            // 5. Chamar o componente de comunicação
+            // Chamar o componente de comunicação
             System.out.println("A enviar dados de edição para o servidor...");
             if (connection.editQuestion(accessCode, newQuestionData)) {
                 System.out.println("Pergunta editada com sucesso!");
@@ -549,7 +543,7 @@ public class ConsoleUI implements Runnable {
         try {
             Docente currentUser = (Docente) loggedInUser;
 
-            // 1. Pedir novos dados
+            // Pedir novos dados
             System.out.print("Novo Nome (Atual: " + currentUser.getNome() + "): ");
             String newName = scanner.nextLine();
             System.out.print("Novo Email (Atual: " + currentUser.getEmail() + "): ");
@@ -566,12 +560,12 @@ public class ConsoleUI implements Runnable {
                 }
             }
 
-            // 2. Preencher os dados
+            // Preencher os dados
             // (Usamos "isEmpty" para que o utilizador possa manter o dado atual se carregar Enter)
             String finalName = newName.isEmpty() ? currentUser.getNome() : newName;
             String finalEmail = newEmail.isEmpty() ? currentUser.getEmail() : newEmail;
 
-            // 3. Criar o objeto Docente ATUALIZADO
+            // Criar o objeto Docente ATUALIZADO
             Docente updatedDocente = new Docente(currentUser.getId(), finalName, finalEmail);
 
             // 4. Chamar a Conexão
@@ -597,7 +591,7 @@ public class ConsoleUI implements Runnable {
         try {
             Estudante currentUser = (Estudante) loggedInUser;
 
-            // 1. Pedir novos dados
+            // Pedir novos dados
             System.out.print("Novo Nome (Atual: " + currentUser.getNome() + "): ");
             String newName = scanner.nextLine();
             System.out.print("Novo Email (Atual: " + currentUser.getEmail() + "): ");
@@ -616,15 +610,15 @@ public class ConsoleUI implements Runnable {
                 }
             }
 
-            // 2. Preencher os dados
+            // Preencher os dados
             String finalName = newName.isEmpty() ? currentUser.getNome() : newName;
             String finalEmail = newEmail.isEmpty() ? currentUser.getEmail() : newEmail;
             String finalNumber = newNumber.isEmpty() ? currentUser.getStudentNumber() : newNumber;
 
-            // 3. Criar o objeto Estudante ATUALIZADO
+            // Criar o objeto Estudante ATUALIZADO
             Estudante updatedEstudante = new Estudante(currentUser.getId(), finalName, finalEmail, finalNumber);
 
-            // 4. Chamar a Conexão
+            // Chamar a Conexão
             if (connection.updateProfileEstudante(updatedEstudante, newPass1)) {
                 System.out.println("Perfil atualizado com sucesso!");
                 this.loggedInUser = updatedEstudante; // Atualiza o objeto local
@@ -667,8 +661,6 @@ public class ConsoleUI implements Runnable {
         System.out.println("---------------------------------");
     }
 
-    // Adiciona estes métodos ao ficheiro ConsoleUI.java
-
     /**
      * Pede o código de uma pergunta e exibe os resultados e estatísticas.
      * Oferece a opção de exportar para CSV.
@@ -710,10 +702,9 @@ public class ConsoleUI implements Runnable {
         }
     }
 
-    // O método generateCSV mantém-se igual ao que te enviei antes,
-// porque agora já tens o objeto 'Question q' e a lista 'list' disponíveis.
+
     private void generateCSV(Question q, List<QuestionResult> results) {
-        // ... (código de escrita do ficheiro igual à resposta anterior) ...
+
         String fileName = "resultados_" + q.getAccessCode() + ".csv";
 
         // Usa "ISO_LOCAL_DATE" ou padrão costumizado para formatar as datas
@@ -721,7 +712,7 @@ public class ConsoleUI implements Runnable {
         DateTimeFormatter timeFmt = DateTimeFormatter.ofPattern("HH:mm");
 
         try (PrintWriter writer = new PrintWriter(new FileWriter(fileName))) {
-            // --- SECÇÃO 1: Cabeçalho da Pergunta ---
+            // Cabeçalho da Pergunta
             writer.println("\"dia\";\"hora inicial\";\"hora final\";\"enunciado da pergunta\";\"opção certa\"");
 
             writer.printf("\"%s\";\"%s\";\"%s\";\"%s\";\"%s\"\n",
@@ -732,17 +723,17 @@ public class ConsoleUI implements Runnable {
                     q.getCorrectAnswer()
             );
 
-            writer.println(); // Linha em branco (opcional, para legibilidade)
+            writer.println();
 
-            // --- SECÇÃO 2: Opções ---
+            // Opções
             writer.println("\"opção\";\"texto da opção\"");
             for (Option op : q.getOptions()) {
                 writer.printf("\"%s\";\"%s\"\n", op.getLetter(), op.getTextOption());
             }
 
-            writer.println(); // Linha em branco
+            writer.println();
 
-            // --- SECÇÃO 3: Respostas dos Alunos ---
+            // Respostas dos Alunos
             writer.println("\"número de estudante\";\"nome\";\"e-mail\";\"resposta\"");
 
             for (QuestionResult res : results) {

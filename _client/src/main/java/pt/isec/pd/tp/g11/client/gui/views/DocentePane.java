@@ -32,7 +32,7 @@ public class DocentePane extends BorderPane {
     }
 
     private void setupUI() {
-        // --- FILTROS E AÇÕES ---
+        // FILTROS E AÇÕES
         HBox topBar = new HBox(10);
         topBar.setPadding(new Insets(10));
         topBar.setAlignment(Pos.CENTER_LEFT);
@@ -52,7 +52,7 @@ public class DocentePane extends BorderPane {
         topBar.getChildren().addAll(new Label("Filtro:"), cmbFilter, btnRefresh, new Separator(), btnCreate);
         this.setTop(topBar);
 
-        // --- TABELA ---
+        // TABELA
         table = new TableView<>();
         DateTimeFormatter fmt = DateTimeFormatter.ofPattern("dd/MM HH:mm");
 
@@ -72,7 +72,7 @@ public class DocentePane extends BorderPane {
         table.setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
         this.setCenter(table);
 
-        // --- BOTÕES DE CONTEXTO (Em baixo) ---
+        //BOTÕES DE CONTEXTO
         HBox bottomBar = new HBox(10);
         bottomBar.setPadding(new Insets(10));
         bottomBar.setAlignment(Pos.CENTER);
@@ -134,7 +134,7 @@ public class DocentePane extends BorderPane {
         });
     }
 
-    // --- CRIAR / EDITAR PERGUNTA (Simplificado com Dialog) ---
+    // CRIAR / EDITAR PERGUNTA
     private void showCreateQuestionDialog() {
         showQuestionDialog(null);
     }
@@ -150,15 +150,15 @@ public class DocentePane extends BorderPane {
         dialog.getDialogPane().getButtonTypes().addAll(ButtonType.OK, ButtonType.CANCEL);
         dialog.setResizable(true); // Permitir redimensionar a janela
 
-        // 1. Criar um ScrollPane para o caso de ter muitas opções
+
         ScrollPane scrollPane = new ScrollPane();
         scrollPane.setFitToWidth(true);
-        scrollPane.setPrefHeight(450); // Altura confortável
+        scrollPane.setPrefHeight(450);
 
         VBox root = new VBox(10);
         root.setPadding(new Insets(15));
 
-        // --- CAMPOS FIXOS (Enunciado e Datas) ---
+        //  CAMPOS FIXOS (Enunciado e Datas)
         TextField txtEnun = new TextField(existing != null ? existing.getEnunciado() : "");
         txtEnun.setPromptText("Enunciado da Pergunta");
 
@@ -176,7 +176,7 @@ public class DocentePane extends BorderPane {
                 new Separator()
         );
 
-        // --- OPÇÕES DINÂMICAS ---
+        // OPÇÕES DINÂMICAS
         Label lblOp = new Label("Opções (Mínimo 2):");
         VBox optionsBox = new VBox(5); // Caixa onde as opções vão aparecer
         List<TextField> optionFields = new ArrayList<>(); // Lista para guardarmos os TextFields
@@ -215,25 +215,25 @@ public class DocentePane extends BorderPane {
 
         root.getChildren().addAll(lblOp, optionsBox, btnAddOp, new Separator());
 
-        // --- RESPOSTA CORRETA ---
+        // RESPOSTA CORRETA
         TextField txtCorrect = new TextField(existing != null ? existing.getCorrectAnswer() : "");
         txtCorrect.setPromptText("Ex: a");
 
         root.getChildren().addAll(new Label("Letra da Opção Correta:"), txtCorrect);
 
-        // Finalizar a UI
+
         scrollPane.setContent(root);
         dialog.getDialogPane().setContent(scrollPane);
 
-        // --- LÓGICA DE CONVERSÃO (Ler os dados) ---
+        // LÓGICA DE CONVERSÃO (Ler os dados)
         dialog.setResultConverter(btn -> {
             if (btn == ButtonType.OK) {
                 try {
-                    // 1. Validar Datas
+                    // Validar Datas
                     LocalDateTime start = LocalDateTime.parse(txtStart.getText(), fmt);
                     LocalDateTime end = LocalDateTime.parse(txtEnd.getText(), fmt);
 
-                    // 2. Recolher Opções Dinamicamente
+                    //  Recolher Opções Dinamicamente
                     List<Option> newOptions = new ArrayList<>();
                     for (int i = 0; i < optionFields.size(); i++) {
                         String text = optionFields.get(i).getText().trim();
@@ -245,7 +245,7 @@ public class DocentePane extends BorderPane {
 
                     if (newOptions.size() < 2) throw new Exception("Tem de ter pelo menos 2 opções.");
 
-                    // 3. Validar Resposta Certa
+                    // Validar Resposta Certa
                     String correct = txtCorrect.getText().trim().toLowerCase();
                     if (correct.isEmpty()) throw new Exception("Indique qual é a letra correta.");
 
@@ -274,7 +274,7 @@ public class DocentePane extends BorderPane {
             return null;
         });
 
-        // --- ENVIAR PARA O SERVIDOR ---
+        // ENVIAR PARA O SERVIDOR
         dialog.showAndWait().ifPresent(newQ -> {
             new Thread(() -> {
                 boolean success;
@@ -293,7 +293,7 @@ public class DocentePane extends BorderPane {
         });
     }
 
-    // --- RESULTADOS E CSV ---
+    //  RESULTADOS E CSV
     private void handleResults() {
         Question q = table.getSelectionModel().getSelectedItem();
         if (q == null) return;
@@ -315,16 +315,16 @@ public class DocentePane extends BorderPane {
         alert.setTitle("Resultados: " + report.question.getAccessCode());
         alert.setHeaderText("Relatório de Respostas");
 
-        // Construir o texto com a mesma riqueza de detalhes da Consola
+
         StringBuilder sb = new StringBuilder();
 
-        // 1. Cabeçalho com detalhes da Pergunta
+        // Cabeçalho com detalhes da Pergunta
         sb.append("--- Detalhes da Pergunta ---\n");
         sb.append("Enunciado: ").append(report.question.getEnunciado()).append("\n");
         sb.append("Opção Correta: ").append(report.question.getCorrectAnswer().toUpperCase()).append("\n");
         sb.append("Total Respostas: ").append(report.results.size()).append("\n\n");
 
-        // 2. Lista de Resultados
+        // Lista de Resultados
         sb.append("--- Respostas dos Alunos ---\n");
         if (report.results.isEmpty()) {
             sb.append("(Sem respostas para mostrar)");
@@ -342,7 +342,7 @@ public class DocentePane extends BorderPane {
         TextArea area = new TextArea(sb.toString());
         area.setEditable(false);
         area.setWrapText(true);
-        area.setPrefSize(500, 300); // Aumentar um pouco o tamanho da janela
+        area.setPrefSize(500, 300);
 
         alert.getDialogPane().setContent(area);
 
@@ -363,15 +363,14 @@ public class DocentePane extends BorderPane {
         if (file != null) {
             try (PrintWriter writer = new PrintWriter(new FileWriter(file))) {
 
-                // Extrair as variáveis para facilitar
                 Question q = report.question;
                 List<QuestionResult> results = report.results;
 
-                // Formatadores de data/hora (iguais à Consola)
+                // Formatadores de data/hora
                 DateTimeFormatter dateFmt = DateTimeFormatter.ofPattern("dd-MM-yyyy");
                 DateTimeFormatter timeFmt = DateTimeFormatter.ofPattern("HH:mm");
 
-                // --- SECÇÃO 1: Cabeçalho da Pergunta ---
+                //  SECÇÃO 1: Cabeçalho da Pergunta
                 writer.println("\"dia\";\"hora inicial\";\"hora final\";\"enunciado da pergunta\";\"opção certa\"");
 
                 writer.printf("\"%s\";\"%s\";\"%s\";\"%s\";\"%s\"\n",
@@ -384,7 +383,7 @@ public class DocentePane extends BorderPane {
 
                 writer.println();
 
-                // --- SECÇÃO 2: Opções ---
+                //  SECÇÃO 2: Opções
                 writer.println("\"opção\";\"texto da opção\"");
                 for (Option op : q.getOptions()) {
                     writer.printf("\"%s\";\"%s\"\n", op.getLetter(), op.getTextOption());
@@ -392,7 +391,7 @@ public class DocentePane extends BorderPane {
 
                 writer.println();
 
-                // --- SECÇÃO 3: Respostas dos Alunos ---
+                //  SECÇÃO 3: Respostas dos Alunos
                 writer.println("\"número de estudante\";\"nome\";\"e-mail\";\"resposta\"");
 
                 for (QuestionResult r : results) {

@@ -15,35 +15,13 @@ public class Option implements Serializable {
     }
 
     // Getters e Setters
-    public int getId() {
-        return id;
-    }
-
-    public void setId(int id) {
-        this.id = id;
-    }
-
-    public int getQuestionId() {
-        return questionId;
-    }
-
-    public void setQuestionId(int questionId) {
-        this.questionId = questionId;
-    }
 
     public String getLetter() {
         return letter;
-    }
-
-    public void setLetter(String letter) {
-        this.letter = letter;
     }
 
     public String getTextOption() {
         return textOption;
     }
 
-    public void setTextOption (String textOption) {
-        this.textOption = textOption;
-    }
 }

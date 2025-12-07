@@ -39,24 +39,23 @@
 
         @Override
         public void run() {
-            // 1. REGISTAR ESTE CLIENTE NA LISTA
+            // REGISTAR ESTE CLIENTE NA LISTA
             activeClients.add(this);
             try {
-                // 1. Setup dos streams (Object Streams para TCPMessage)
+                //  Setup dos streams (Object Streams para TCPMessage)
                 this.out = new ObjectOutputStream(clientSocket.getOutputStream());
                 this.in = new ObjectInputStream(clientSocket.getInputStream());
 
-                // 2. Aplicar o timeout de autenticação de 30s
+                // timeout de autenticação de 30s
                 clientSocket.setSoTimeout(30000); // 30 segundos
 
-                // 3. Esperar pela primeira mensagem (Login ou Registo)
+                // esperar pela primeira mensagem (Login ou Registo)
                 TCPMessage request = (TCPMessage) in.readObject();
 
-                // 4. Processar o primeiro pedido
+                // Processar o primeiro pedido
                 if (request.getType() == MessageType.LOGIN_REQUEST) {
                     handleLogin(request);
                 } else if (request.getType() == MessageType.REGISTER_ESTUDANTE) {
-                    // Descomentar e implementar
                     handleRegisterEstudante(request);
                 } else if (request.getType() == MessageType.REGISTER_DOCENTE) {
                     handleRegisterDocente(request);
@@ -64,16 +63,16 @@
                     out.writeObject(new TCPMessage(MessageType.LOGIN_FAILED, "Protocolo inválido. Esperado LOGIN ou REGISTER."));
                 }
 
-                // 5. Se autenticação/registo falhou, a thread termina (socket já foi fechado pelo handler)
+                // autenticação/registo falhou, a thread termina (socket já foi fechado pelo handler)
                 if (authenticatedUser == null) {
                     return; // Termina a thread ClientHandler
                 }
 
-                // 6. LOGIN/REGISTO COM SUCESSO: Remover o timeout e entrar no loop principal
+                // LOGIN/REGISTO COM SUCESSO: Remover o timeout e entrar no loop principal
                 clientSocket.setSoTimeout(0); // 0 = timeout infinito para a sessão
                 System.out.println("[ClientHandler] Utilizador " + authenticatedUser.getEmail() + " autenticado.");
 
-                // 7. Loop principal: Espera por mais pedidos do cliente autenticado
+                // Loop principal: Espera por mais pedidos do cliente autenticado
                 while (!clientSocket.isClosed()) {
                     TCPMessage mainRequest = (TCPMessage) in.readObject();
                     // Tratar dos pedidos do utilizador logado
@@ -131,7 +130,7 @@
             } finally {
                 // Garante que o socket é sempre fechado quando a thread termina
                 try {
-                    // 2. REMOVER DA LISTA QUANDO SAIR
+                    // REMOVER DA LISTA QUANDO SAIR
                     activeClients.remove(this);
                     if (clientSocket != null && !clientSocket.isClosed()) {
                         clientSocket.close();
@@ -165,7 +164,6 @@
                 out.writeObject(new TCPMessage(MessageType.LOGIN_SUCCESS, user)); // Envia o objeto User
             } else {
                 out.writeObject(new TCPMessage(MessageType.LOGIN_FAILED, "Credenciais inválidas."));
-                // Não fecha o socket aqui, deixa o 'run()' tratar disso
             }
         }
 
@@ -189,17 +187,17 @@
             Estudante estudante = (Estudante) payload[0];
             String plainPassword = (String) payload[1];
 
-            // 1. Fazer o Hash da password
+            // Fazer o Hash da password
             String passwordHash = SecurityUtils.hashPassword(plainPassword);
 
             // USAR O NOVO MÉTODO QUE DEVOLVE SQL
             String sqlQuery = dbManager.registerEstudante(estudante, passwordHash);
 
             if (sqlQuery != null) {
-                // Sucesso na BD Local -> Agora avisar o Cluster!
+                // Sucesso na BD Local
                 int newVersion = dbManager.getDbVersion();
 
-                // Enviar Multicast Imediato
+                // Enviar Multicast
                 heartbeatService.sendUpdate(sqlQuery, newVersion);
 
                 out.writeObject(new TCPMessage(MessageType.REGISTER_SUCCESS));
@@ -230,13 +228,13 @@
             String plainPassword = (String) payload[1];
             String registerCode = (String) payload[2];
 
-            // 1. Fazer o Hash da password
+            // Fazer o Hash da password
             String passwordHash = SecurityUtils.hashPassword(plainPassword);
 
-            // 2. Tentar registar na Base de Dados
+            // Tentar registar na Base de Dados
             String result = dbManager.registerDocente(docente, passwordHash, registerCode);
 
-            // 3. Enviar resposta
+            // Enviar resposta
             if (result == null) {
                 out.writeObject(new TCPMessage(MessageType.REGISTER_FAILED, "Email já existente ou erro interno."));
             } else if (result.equals("WRONG_CODE")) {
@@ -244,19 +242,16 @@
                 out.writeObject(new TCPMessage(MessageType.REGISTER_FAILED, "Código de registo de docente incorreto."));
             } else {
                 // Caso SUCESSO (é uma query SQL):
-                // 1. Obter a nova versão
+                // Obter a nova versão
                 int newVersion = dbManager.getDbVersion();
 
-                // 2. Enviar Multicast para os backups
+                // Enviar Multicast para os backups
                 heartbeatService.sendUpdate(result, newVersion);
 
-                // 3. Responder ao Cliente
+                // Responder ao Cliente
                 out.writeObject(new TCPMessage(MessageType.REGISTER_SUCCESS));
                 System.out.println("[ClientHandler] Docente registado e propagado para o cluster.");
             }
-
-            // Tal como no registo de estudante, o 'authenticatedUser' fica 'null'
-            // e a thread termina, fechando o socket.
         }
 
         /**
@@ -264,13 +259,13 @@
          * Verifica se o utilizador é um Docente e notifica todos os clientes.
          */
         private void handleCreateQuestion(TCPMessage request) throws Exception {
-            // 1. Verificar se o utilizador é um Docente
+            // Verificar se o utilizador é um Docente
             if (!(authenticatedUser instanceof Docente)) {
                 out.writeObject(new TCPMessage(MessageType.CREATE_QUESTION_FAILED, "Apenas Docentes podem criar perguntas."));
                 return;
             }
 
-            // 2. Verificar o payload
+            // Verificar o payload
             if (!(request.getPayload() instanceof Question)) {
                 out.writeObject(new TCPMessage(MessageType.CREATE_QUESTION_FAILED, "Payload inválido para CREATE_QUESTION_REQUEST."));
                 return;
@@ -278,28 +273,27 @@
 
             Question question = (Question) request.getPayload();
 
-            // 3. Chamar o DatabaseManager para inserir na BD
+            // Chamar o DatabaseManager para inserir na BD
             // (O ID do docente é o do utilizador autenticado)
             String[] result = dbManager.createQuestion(question, authenticatedUser.getId());
 
-            // 4. Processar o resultado
+            // Processar o resultado
             if (result != null) {
                 String accessCode = result[0];
                 String sqlQuery = result[1]; // SQL para os backups
 
-                // 4.1. Enviar Multicast (Sincronização da BD com Backups)
+                // Enviar Multicast (Sincronização da BD com Backups)
                 int newVersion = dbManager.getDbVersion();
                 heartbeatService.sendUpdate(sqlQuery, newVersion);
 
-                // 4.2. Responder ao Cliente que fez o pedido (Confirmação Síncrona)
+                // Responder ao Cliente que fez o pedido (Confirmação Síncrona)
                 out.writeObject(new TCPMessage(MessageType.CREATE_QUESTION_SUCCESS, accessCode));
 
-                // 4.3. Notificar TODOS os clientes ligados (Notificação Assíncrona)
-                // Esta mensagem vai aparecer no ecrã dos estudantes instantaneamente
+                // Notificar TODOS os clientes ligados (Notificação Assíncrona)
                 String notificationText = "NOVA PERGUNTA Criada! O docente " + authenticatedUser.getNome() +
-                        " acabou de criar o quiz: \"" + question.getEnunciado() + "\"";
+                        " criou um quiz com o código: \"" + result[0] + "\"";
 
-                broadcast(notificationText); // <--- AQUI ESTÁ A MODIFICAÇÃO
+                broadcast(notificationText);
 
                 System.out.println("[ClientHandler] Pergunta criada, propagada aos backups e notificada aos clientes.");
             } else {
@@ -329,11 +323,11 @@
             String sqlQuery = dbManager.submitAnswer(idEstudante, idPergunta, respostaLetra);
 
             if (sqlQuery != null) {
-                // 1. Enviar Multicast
+                // Enviar Multicast
                 int newVersion = dbManager.getDbVersion();
                 heartbeatService.sendUpdate(sqlQuery, newVersion);
 
-                // 2. Responder ao Cliente
+                // Responder ao Cliente
                 out.writeObject(new TCPMessage(MessageType.SUBMIT_ANSWER_SUCCESS));
                 System.out.println("[ClientHandler] Resposta submetida e propagada.");
             } else {
@@ -347,13 +341,13 @@
          * usando um código de acesso.
          */
         private void handleGetQuestionByCode(TCPMessage request) throws Exception {
-            // 1. Verificar se o utilizador é um Estudante
+            // Verificar se o utilizador é um Estudante
             if (!(authenticatedUser instanceof Estudante)) {
                 out.writeObject(new TCPMessage(MessageType.GET_QUESTION_FAILED, "Apenas Estudantes podem responder a perguntas."));
                 return;
             }
 
-            // 2. Verificar o payload (String accessCode)
+            // Verificar o payload (String accessCode)
             if (!(request.getPayload() instanceof String)) {
                 out.writeObject(new TCPMessage(MessageType.GET_QUESTION_FAILED, "Payload inválido (esperado String)."));
                 return;
@@ -361,11 +355,9 @@
 
             String accessCode = (String) request.getPayload();
 
-            // 3. Chamar o DatabaseManager
-            // Este método (que acabámos de criar) já verifica se a pergunta está ativa
             Question question = dbManager.getActiveQuestionByCode(accessCode);
 
-            // 4. Enviar a resposta
+            // Enviar a resposta
             if (question != null) {
                 // Sucesso! Envia o objeto Question completo
                 out.writeObject(new TCPMessage(MessageType.GET_QUESTION_SUCCESS, question));
@@ -379,30 +371,30 @@
          * Trata de um pedido de um docente para listar as suas próprias perguntas.
          */
         private void handleGetMyQuestions(TCPMessage request) throws Exception {
-            // 1. Verificar se o utilizador é um Docente
+            // Verificar se o utilizador é um Docente
             if (!(authenticatedUser instanceof Docente)) {
                 out.writeObject(new TCPMessage(MessageType.GET_MY_QUESTIONS_FAILED, "Apenas Docentes podem listar perguntas."));
                 return;
             }
 
-            // 2. Verificar o payload (String filtro)
+            // Verificar o payload (String filtro)
             if (!(request.getPayload() instanceof String)) {
                 out.writeObject(new TCPMessage(MessageType.GET_MY_QUESTIONS_FAILED, "Payload inválido (esperado String com o filtro)."));
                 return;
             }
             String filter = (String) request.getPayload();
 
-            // 3. Chamar o DatabaseManager (usando o ID do utilizador autenticado)
+            // Chamar o DatabaseManager (usando o ID do utilizador autenticado)
             List<Question> questions = dbManager.getQuestionsByTeacher(authenticatedUser.getId(), filter);
 
-            // 4. Enviar a resposta (mesmo que a lista esteja vazia)
+            // Enviar a resposta (mesmo que a lista esteja vazia)
             // O cliente (ServerConnection) espera uma Lista, por isso enviamos uma lista (Serializable)
             // está à espera da resposta no métodogetMyQuestions (que estava bloqueado em in.readObject())
             out.writeObject(new TCPMessage(MessageType.GET_MY_QUESTIONS_SUCCESS, (java.io.Serializable) questions));
         }
 
         private void handleDeleteQuestion(TCPMessage request) throws Exception {
-            // 1. Validar utilizador e payload
+            // Validar utilizador e payload
             if (!(authenticatedUser instanceof Docente)) {
                 out.writeObject(new TCPMessage(MessageType.DELETE_QUESTION_FAILED, "Apenas docentes."));
                 return;
@@ -416,18 +408,18 @@
             String accessCode = (String) request.getPayload();
             int idDocente = authenticatedUser.getId();
 
-            // 2. Tentar eliminar
+            // Tentar eliminar
             String sqlQuery = dbManager.deleteQuestion(accessCode, idDocente);
 
             if (sqlQuery != null) {
-                // 3. Propagar para os Backups (Sincronização BD)
+                // Propagar para os Backups (Sincronização BD)
                 int newVersion = dbManager.getDbVersion();
                 heartbeatService.sendUpdate(sqlQuery, newVersion);
 
-                // 4. Responder ao Cliente (Sucesso Síncrono)
+                // Responder ao Cliente (Sucesso Síncrono)
                 out.writeObject(new TCPMessage(MessageType.DELETE_QUESTION_SUCCESS));
 
-                // 5. NOTIFICAR TODOS (Broadcast Assíncrono) -> O NOVO PASSO
+                // 5. NOTIFICAR TODOS (Broadcast Assíncrono)
                 String msg = "ATENÇÃO: A pergunta com código " + accessCode + " foi CANCELADA pelo docente.";
                 broadcast(msg);
 
@@ -438,7 +430,7 @@
         }
 
         private void handleEditQuestion(TCPMessage request) throws Exception {
-            // 1. Validar utilizador e payload
+            // Validar utilizador e payload
             if (!(authenticatedUser instanceof Docente)) {
                 out.writeObject(new TCPMessage(MessageType.EDIT_QUESTION_FAILED, "Apenas docentes."));
                 return;
@@ -454,18 +446,18 @@
             Question newQuestionData = (Question) payload[1];
             int idDocente = authenticatedUser.getId();
 
-            // 2. Tentar editar (Chama o método real do DBManager)
+            // Tentar editar (Chama o método real do DBManager)
             String sqlQuery = dbManager.editQuestion(accessCode, newQuestionData, idDocente);
 
             if (sqlQuery != null) {
-                // 3. Propagar para os Backups (Sincronização BD)
+                // Propagar para os Backups (Sincronização BD)
                 int newVersion = dbManager.getDbVersion();
                 heartbeatService.sendUpdate(sqlQuery, newVersion);
 
-                // 4. Responder ao Cliente (Sucesso Síncrono)
+                // Responder ao Cliente (Sucesso Síncrono)
                 out.writeObject(new TCPMessage(MessageType.EDIT_QUESTION_SUCCESS));
 
-                // 5. NOTIFICAR TODOS (Broadcast Assíncrono) -> O NOVO PASSO
+                // NOTIFICAR TODOS (Broadcast Assíncrono) -> O NOVO PASSO
                 String msg = "ATUALIZAÇÃO: A pergunta " + accessCode + " (\"" + newQuestionData.getEnunciado() + "\") foi alterada pelo docente.";
                 broadcast(msg);
 
@@ -478,13 +470,13 @@
          * Trata de um pedido de um Docente para atualizar o seu perfil.
          */
         private void handleEditProfileDocente(TCPMessage request) throws Exception {
-            // 1. Validar o utilizador (só um Docente pode editar um Docente)
+            // Validar o utilizador (só um Docente pode editar um Docente)
             if (!(authenticatedUser instanceof Docente)) {
                 out.writeObject(new TCPMessage(MessageType.EDIT_PROFILE_DOCENTE_FAILED, "Acesso negado."));
                 return;
             }
 
-            // 2. Validar o payload: Object[] { Docente, String newPassword }
+            // Validar o payload: Object[] { Docente, String newPassword }
             if (!(request.getPayload() instanceof Object[] payload) || payload.length != 2 ||
                     !(payload[0] instanceof Docente) || !(payload[1] instanceof String)) {
                 out.writeObject(new TCPMessage(MessageType.EDIT_PROFILE_DOCENTE_FAILED, "Payload inválido."));
@@ -494,32 +486,31 @@
             Docente updatedDocente = (Docente) payload[0];
             String newPassword = (String) payload[1];
 
-            // 3. VERIFICAÇÃO DE SEGURANÇA CRÍTICA:
+            // VERIFICAÇÃO DE SEGURANÇA CRÍTICA:
             // O utilizador só pode editar o seu PRÓPRIO perfil.
             if (updatedDocente.getId() != authenticatedUser.getId()) {
                 out.writeObject(new TCPMessage(MessageType.EDIT_PROFILE_DOCENTE_FAILED, "Não pode editar o perfil de outro utilizador."));
                 return;
             }
 
-            // 4. Fazer o Hash da nova password (se existir)
+            //  Fazer o Hash da nova password (se existir)
             String passwordHash = null;
             if (newPassword != null && !newPassword.isEmpty()) {
                 passwordHash = SecurityUtils.hashPassword(newPassword);
             }
 
-            // 5. Chamar o DBManager
             String sqlQuery = dbManager.updateDocente(updatedDocente, passwordHash);
 
-            // 6. Processar o resultado e sincronizar
+            // Processar o resultado e sincronizar
             if (sqlQuery != null) {
-                // 6.1. Enviar Multicast
+                // Enviar Multicast
                 int newVersion = dbManager.getDbVersion();
                 heartbeatService.sendUpdate(sqlQuery, newVersion);
 
-                // 6.2. Responder ao Cliente
+                // Responder ao Cliente
                 out.writeObject(new TCPMessage(MessageType.EDIT_PROFILE_DOCENTE_SUCCESS));
 
-                // 6.3. Atualizar o objeto de sessão local
+                // Atualizar o objeto de sessão local
                 this.authenticatedUser = updatedDocente;
                 System.out.println("[ClientHandler] Docente " + updatedDocente.getEmail() + " atualizou o perfil.");
             } else {
@@ -531,13 +522,13 @@
          * Trata de um pedido de um Estudante para atualizar o seu perfil.
          */
         private void handleEditProfileEstudante(TCPMessage request) throws Exception {
-            // 1. Validar o utilizador (só um Estudante pode editar um Estudante)
+            // Validar o utilizador (só um Estudante pode editar um Estudante)
             if (!(authenticatedUser instanceof Estudante)) {
                 out.writeObject(new TCPMessage(MessageType.EDIT_PROFILE_ESTUDANTE_FAILED, "Acesso negado."));
                 return;
             }
 
-            // 2. Validar o payload: Object[] { Estudante, String newPassword }
+            // Validar o payload: Object[] { Estudante, String newPassword }
             if (!(request.getPayload() instanceof Object[] payload) || payload.length != 2 ||
                     !(payload[0] instanceof Estudante) || !(payload[1] instanceof String)) {
                 out.writeObject(new TCPMessage(MessageType.EDIT_PROFILE_ESTUDANTE_FAILED, "Payload inválido."));
@@ -547,31 +538,29 @@
             Estudante updatedEstudante = (Estudante) payload[0];
             String newPassword = (String) payload[1];
 
-            // 3. VERIFICAÇÃO DE SEGURANÇA CRÍTICA:
+            // VERIFICAÇÃO DE SEGURANÇA CRÍTICA:
             if (updatedEstudante.getId() != authenticatedUser.getId()) {
                 out.writeObject(new TCPMessage(MessageType.EDIT_PROFILE_ESTUDANTE_FAILED, "Não pode editar o perfil de outro utilizador."));
                 return;
             }
 
-            // 4. Fazer o Hash da nova password (se existir)
+            // Fazer o Hash da nova password (se existir)
             String passwordHash = null;
             if (newPassword != null && !newPassword.isEmpty()) {
                 passwordHash = SecurityUtils.hashPassword(newPassword);
             }
 
-            // 5. Chamar o DBManager
             String sqlQuery = dbManager.updateEstudante(updatedEstudante, passwordHash);
 
-            // 6. Processar o resultado e sincronizar
             if (sqlQuery != null) {
-                // 6.1. Enviar Multicast
+                // Enviar Multicast
                 int newVersion = dbManager.getDbVersion();
                 heartbeatService.sendUpdate(sqlQuery, newVersion);
 
-                // 6.2. Responder ao Cliente
+                // Responder ao Cliente
                 out.writeObject(new TCPMessage(MessageType.EDIT_PROFILE_ESTUDANTE_SUCCESS));
 
-                // 6.3. Atualizar o objeto de sessão local
+                // Atualizar o objeto de sessão local
                 this.authenticatedUser = updatedEstudante;
                 System.out.println("[ClientHandler] Estudante " + updatedEstudante.getEmail() + " atualizou o perfil.");
             } else {
@@ -583,17 +572,17 @@
          * Trata de um pedido de um estudante para ver o seu histórico de respostas.
          */
         private void handleGetMyAnswers(TCPMessage request) throws Exception {
-            // 1. Validar utilizador
+            //  Validar utilizador
             if (!(authenticatedUser instanceof Estudante)) {
                 out.writeObject(new TCPMessage(MessageType.GET_MY_ANSWERS_FAILED, "Apenas estudantes."));
                 return;
             }
 
-            // 2. Chamar o DBManager (não precisa de payload, usa o ID da sessão)
+
             int idEstudante = authenticatedUser.getId();
             List<SubmittedAnswer> answers = dbManager.getSubmittedAnswers(idEstudante);
 
-            // 3. Enviar a resposta (é sempre sucesso, mesmo que a lista esteja vazia)
+            // Enviar a resposta (é sempre sucesso, mesmo que a lista esteja vazia)
             // O List<SubmittedAnswer> é Serializable
             out.writeObject(new TCPMessage(MessageType.GET_MY_ANSWERS_SUCCESS, (java.io.Serializable) answers));
         }
@@ -610,20 +599,20 @@
             String accessCode = (String) request.getPayload();
             int idDocente = authenticatedUser.getId();
 
-            // 1. Buscar a Pergunta (Detalhes para o cabeçalho do CSV)
+            // Buscar a Pergunta (Detalhes para o cabeçalho do CSV)
             Question question = dbManager.getQuestionDetails(accessCode);
 
-            // 2. Validar se a pergunta existe e pertence ao docente
+            // Validar se a pergunta existe e pertence ao docente
             if (question == null || question.getIdDocente() != idDocente) {
                 out.writeObject(new TCPMessage(MessageType.GET_QUESTION_RESULTS_FAILED, "Pergunta não encontrada ou não lhe pertence."));
                 return;
             }
 
-            // 3. Buscar a Lista de Resultados (Respostas dos alunos)
+            // Buscar a Lista de Resultados (Respostas dos alunos)
             List<QuestionResult> results = dbManager.getQuestionResults(accessCode, idDocente);
 
-            // 4. EMPACOTAR TUDO: Enviar Object[] { Question, List<QuestionResult> }
-            // Reutilizamos o tipo GET_QUESTION_RESULTS_SUCCESS
+            //  enviar Object[] { Question, List<QuestionResult> }
+
             Object[] responsePayload = new Object[]{ question, results };
 
             out.writeObject(new TCPMessage(MessageType.GET_QUESTION_RESULTS_SUCCESS, responsePayload));

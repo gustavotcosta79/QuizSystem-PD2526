@@ -1,6 +1,6 @@
 /*
  * Ficheiro: ServerConnection.java
- * Atualizado para suportar Callbacks de GUI
+ *  suporta Callbacks de GUI
  */
 package pt.isec.pd.tp.g11.client.communication;
 
@@ -16,7 +16,7 @@ import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.Socket;
-import java.net.SocketTimeoutException;
+
 import java.util.List;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -27,25 +27,30 @@ public class ServerConnection {
 
     private static final int DIRECTORY_RESPONSE_TIMEOUT_MS = 3000;
 
+    // Dados da diretoria para descoberta de servidores
     private final InetAddress dirAddress;
     private final int dirPort;
 
+    // Dados do servidor ao qual estamos ligados
     private String serverIp;
     private int serverPort;
 
+    // Cache para re-autenticação em caso de failover
     private String lastEmail = null;
     private String lastPassword = null;
     private String currentServerIp = null;
     private int currentServerPort = 0;
 
+    // Componentes da ligação TCP persistente
     private Socket tcpSocket;
     private ObjectOutputStream out;
     private ObjectInputStream in;
 
+    // Fila para receber respostas síncronas do servidor
     private final BlockingQueue<TCPMessage> responseQueue = new LinkedBlockingQueue<>();
     private NotificationListener notificationListener;
 
-    // --- NOVO: Callback para a GUI ---
+    // Callback para a GUI sobre as not.assinc (por exemplo uma nova pergunta)
     private Consumer<String> onNotification = null;
 
     public ServerConnection(String dirInfo) throws Exception {
@@ -56,19 +61,23 @@ public class ServerConnection {
         this.dirPort = Integer.parseInt(parts[1]);
     }
 
-    // --- NOVO: Setter para a GUI registar o alerta ---
+    //Setter para a GUI registar o alerta
     public void setNotificationCallback(Consumer<String> callback) {
         this.onNotification = callback;
     }
 
+    //contacta a diretoria via UDP p saber o sv principal ativo
     public boolean findServer() {
         System.out.println("[Comunicação] A contactar diretoria em " + dirAddress.getHostAddress() + ":" + dirPort);
         try (DatagramSocket socket = new DatagramSocket()) {
             socket.setSoTimeout(DIRECTORY_RESPONSE_TIMEOUT_MS);
+
+
             UDPMessage requestMsg = new UDPMessage(MessageType.CLIENT_REQUEST_SERVER);
             byte[] sendData = SerializationUtils.serialize(requestMsg);
             DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, dirAddress, dirPort);
             socket.send(sendPacket);
+
 
             byte[] receiveBuffer = new byte[4096];
             DatagramPacket receivePacket = new DatagramPacket(receiveBuffer, receiveBuffer.length);
@@ -91,6 +100,7 @@ public class ServerConnection {
         }
     }
 
+    //estabelece ligacao tcp e autentica o user
     public User login(String email, String password) {
         if (tcpSocket != null && !tcpSocket.isClosed()) {
             return null;
@@ -104,6 +114,7 @@ public class ServerConnection {
             this.out = new ObjectOutputStream(tcpSocket.getOutputStream());
             this.in = new ObjectInputStream(tcpSocket.getInputStream());
 
+            //inicia a thread p escutar resposta e notificacoes
             notificationListener = new NotificationListener(in, responseQueue, onNotification);
             notificationListener.start();
 
@@ -113,6 +124,7 @@ public class ServerConnection {
             out.writeObject(loginRequest);
             out.flush();
 
+            //espera resposta d login na fila
             TCPMessage response = responseQueue.poll(10, TimeUnit.SECONDS);
 
             if (response == null) {
@@ -123,6 +135,7 @@ public class ServerConnection {
             if (response.getType() == MessageType.LOGIN_SUCCESS) {
                 if (response.getPayload() instanceof User) {
                     User user = (User) response.getPayload();
+                    //guardamos credenciais caso haja failover no futuro
                     this.lastEmail = email;
                     this.lastPassword = password;
                     this.currentServerIp = this.serverIp;
@@ -139,6 +152,7 @@ public class ServerConnection {
         }
     }
 
+    //registo (usa ligacao tcp temporaria)
     public boolean registerEstudante(Estudante estudante, String password) {
         if (serverIp == null) return false;
         try (Socket tempSocket = new Socket(serverIp, serverPort);
@@ -176,6 +190,7 @@ public class ServerConnection {
         }
     }
 
+    //fecha recursos e interrompe thread d escuta
     public void closeConnection() {
         try {
             if (notificationListener != null) notificationListener.interrupt();
@@ -188,6 +203,7 @@ public class ServerConnection {
         }
     }
 
+    //metodos logica de negocio (sendRequest serve para tratar do failover)
     public String createQuestion(Question question) {
         TCPMessage response = sendRequest(new TCPMessage(MessageType.CREATE_QUESTION_REQUEST, question));
         return (response != null && response.getType() == MessageType.CREATE_QUESTION_SUCCESS) ? (String) response.getPayload() : null;
@@ -241,6 +257,7 @@ public class ServerConnection {
         return (response != null && response.getType() == MessageType.GET_MY_ANSWERS_SUCCESS) ? (List<SubmittedAnswer>) response.getPayload() : null;
     }
 
+    //classe auxiliar para passarmos a pergunta + resultados num só objeto
     public static class QuestionFullReport implements java.io.Serializable {
         public Question question;
         public List<QuestionResult> results;
@@ -257,13 +274,17 @@ public class ServerConnection {
         return null;
     }
 
+    //se a ligacao cair tenta reconectar-se
     private boolean reconnectAndReauthenticate() {
         System.err.println("[Failover] A tentar recuperar ligação...");
         String oldServerIp = this.currentServerIp;
         int oldServerPort = this.currentServerPort;
         closeConnection();
+
+        //tenta descobrir novo sv
         if (!findServer()) return false;
 
+        //se sv for o mesmo que caiu, espera 20s para a diretoria atualizar-se
         if (this.serverIp.equals(oldServerIp) && this.serverPort == oldServerPort) {
             try { Thread.sleep(20000); } catch (InterruptedException e) { return false; }
             if (!findServer()) return false;
@@ -271,12 +292,14 @@ public class ServerConnection {
         this.currentServerIp = this.serverIp;
         this.currentServerPort = this.serverPort;
 
+        //tenta login
         if (lastEmail != null && lastPassword != null) {
             return login(this.lastEmail, this.lastPassword) != null;
         }
         return false;
     }
 
+    // Wrapper para enviar pedidos com tratamento automático de erros de rede
     private TCPMessage sendRequest(TCPMessage requestMsg) {
         try {
             responseQueue.clear();
@@ -286,6 +309,7 @@ public class ServerConnection {
             if (response == null) throw new Exception("Timeout");
             return response;
         } catch (Exception e) {
+            // Se falhar, tenta failover e reenvia o pedido
             if (reconnectAndReauthenticate()) {
                 try {
                     responseQueue.clear();

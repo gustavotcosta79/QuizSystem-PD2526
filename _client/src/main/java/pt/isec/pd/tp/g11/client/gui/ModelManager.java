@@ -14,7 +14,7 @@ public class ModelManager {
 
     public ModelManager() throws Exception {
         // Inicializa com a diretoria hardcoded ou passada por argumento no Main
-        // Aqui assumimos localhost para facilitar, mas o ideal é vir do Main
+        // Aqui assumimos localhost para facilitar
         this.connection = new ServerConnection("127.0.0.1:5000");
         this.pcs = new PropertyChangeSupport(this);
     }
@@ -56,7 +56,7 @@ public class ModelManager {
     public User getCurrentUser() { return currentUser; }
     public ServerConnection getConnection() { return connection; }
 
-    // --- Sistema de Eventos ---
+    //  Sistema de Eventos
     public void addPropertyChangeListener(String property, PropertyChangeListener listener) {
         pcs.addPropertyChangeListener(property, listener);
     }
