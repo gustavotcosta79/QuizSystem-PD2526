@@ -1,16 +1,13 @@
 /*
  * Ficheiro: ServerConnection.java
- * [cite_start]Objetivo: Componente de Comunicação[cite: 173].
- * Responsabilidade: Gerir toda a comunicação de rede (UDP e TCP).
- * A Vista (ConsoleUI) chama métodos desta classe para
- * executar ações de rede.
+ *  suporta Callbacks de GUI
  */
 package pt.isec.pd.tp.g11.client.communication;
 
 import pt.isec.pd.tp.g11.common.enums.MessageType;
 import pt.isec.pd.tp.g11.common.messages.TCPMessage;
 import pt.isec.pd.tp.g11.common.messages.UDPMessage;
-import pt.isec.pd.tp.g11.common.model.User;
+import pt.isec.pd.tp.g11.common.model.*;
 import pt.isec.pd.tp.g11.common.utils.SerializationUtils;
 
 import java.io.ObjectInputStream;
@@ -19,24 +16,42 @@ import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.Socket;
-import java.net.SocketTimeoutException;
+
+import java.util.List;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
+import java.util.function.Consumer;
 
 public class ServerConnection {
 
     private static final int DIRECTORY_RESPONSE_TIMEOUT_MS = 3000;
 
-    // Info da Diretoria (do arranque)
+    // Dados da diretoria para descoberta de servidores
     private final InetAddress dirAddress;
     private final int dirPort;
 
-    // Info do Servidor (descoberto via UDP)
+    // Dados do servidor ao qual estamos ligados
     private String serverIp;
     private int serverPort;
 
-    // TODO: A ligação TCP principal e os ObjectStreams
+    // Cache para re-autenticação em caso de failover
+    private String lastEmail = null;
+    private String lastPassword = null;
+    private String currentServerIp = null;
+    private int currentServerPort = 0;
+
+    // Componentes da ligação TCP persistente
     private Socket tcpSocket;
     private ObjectOutputStream out;
     private ObjectInputStream in;
+
+    // Fila para receber respostas síncronas do servidor
+    private final BlockingQueue<TCPMessage> responseQueue = new LinkedBlockingQueue<>();
+    private NotificationListener notificationListener;
+
+    // Callback para a GUI sobre as not.assinc (por exemplo uma nova pergunta)
+    private Consumer<String> onNotification = null;
 
     public ServerConnection(String dirInfo) throws Exception {
         String[] parts = dirInfo.split(":");
@@ -46,146 +61,264 @@ public class ServerConnection {
         this.dirPort = Integer.parseInt(parts[1]);
     }
 
-    /**
-     * Contacta o Serviço de Diretoria (UDP) para descobrir
-     * o IP/Porto do servidor principal.
-     * @return true se bem-sucedido, false se falhar.
-     */
+    //Setter para a GUI registar o alerta
+    public void setNotificationCallback(Consumer<String> callback) {
+        this.onNotification = callback;
+    }
+
+    //contacta a diretoria via UDP p saber o sv principal ativo
     public boolean findServer() {
         System.out.println("[Comunicação] A contactar diretoria em " + dirAddress.getHostAddress() + ":" + dirPort);
-
         try (DatagramSocket socket = new DatagramSocket()) {
             socket.setSoTimeout(DIRECTORY_RESPONSE_TIMEOUT_MS);
 
-            // 1. Criar e enviar pedido
+
             UDPMessage requestMsg = new UDPMessage(MessageType.CLIENT_REQUEST_SERVER);
             byte[] sendData = SerializationUtils.serialize(requestMsg);
             DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, dirAddress, dirPort);
             socket.send(sendPacket);
 
-            // 2. Receber resposta
+
             byte[] receiveBuffer = new byte[4096];
             DatagramPacket receivePacket = new DatagramPacket(receiveBuffer, receiveBuffer.length);
             socket.receive(receivePacket);
 
-            // 3. Processar resposta
             UDPMessage responseMsg = (UDPMessage) SerializationUtils.deserialize(receivePacket.getData());
 
             if (responseMsg.getType() == MessageType.CLIENT_RESPONSE_SERVER) {
                 String[] payload = responseMsg.getPayload();
                 this.serverIp = payload[0];
-                this.serverPort = Integer.parseInt(payload[1]); // Este é o clientPort do servidor
+                this.serverPort = Integer.parseInt(payload[1]);
                 System.out.println("[Comunicação] Servidor encontrado em: " + serverIp + ":" + serverPort);
                 return true;
             } else {
-                System.err.println("[Comunicação] Diretoria respondeu com erro: " + responseMsg.getPayload()[0]);
                 return false;
             }
-        } catch (SocketTimeoutException e) {
-            System.err.println("[Comunicação] Diretoria não respondeu (timeout).");
-            return false;
         } catch (Exception e) {
             System.err.println("[Comunicação] Erro ao procurar servidor: " + e.getMessage());
             return false;
         }
     }
 
+    //estabelece ligacao tcp e autentica o user
     public User login(String email, String password) {
-        // Se já tivermos uma ligação, tentar reutilizá-la?
-        // Por agora, vamos assumir que o login é a primeira ação TCP.
         if (tcpSocket != null && !tcpSocket.isClosed()) {
-            System.err.println("[Comunicação] Já existe uma ligação TCP ativa.");
-            // Poderíamos tentar fazer logout primeiro, ou simplesmente falhar.
             return null;
         }
-
         if (serverIp == null) {
-            System.err.println("Erro: Servidor principal não encontrado via UDP.");
             return null;
         }
 
         try {
-            // 1. Estabelecer a ligação TCP permanente (NÃO usar try-with-resources)
-            System.out.println("[Comunicação] A ligar (TCP) a " + serverIp + ":" + serverPort + "...");
             this.tcpSocket = new Socket(serverIp, serverPort);
-            // IMPORTANTE: Criar o Output stream PRIMEIRO
             this.out = new ObjectOutputStream(tcpSocket.getOutputStream());
             this.in = new ObjectInputStream(tcpSocket.getInputStream());
-            System.out.println("[Comunicação] Ligação TCP estabelecida.");
 
-            // 2. Criar e enviar a mensagem de Login
+            //inicia a thread p escutar resposta e notificacoes
+            notificationListener = new NotificationListener(in, responseQueue, onNotification);
+            notificationListener.start();
+
             String[] credentials = {email, password};
             TCPMessage loginRequest = new TCPMessage(MessageType.LOGIN_REQUEST, credentials);
-            System.out.println("[Comunicação] A enviar pedido de LOGIN...");
+
             out.writeObject(loginRequest);
-            out.flush(); // Garante que a mensagem é enviada
+            out.flush();
 
-            // 3. Esperar pela resposta do servidor (LOGIN_SUCCESS ou LOGIN_FAILED)
-            System.out.println("[Comunicação] A aguardar resposta do servidor...");
-            Object responseObj = in.readObject(); // Bloqueia até receber resposta
+            //espera resposta d login na fila
+            TCPMessage response = responseQueue.poll(10, TimeUnit.SECONDS);
 
-            if (!(responseObj instanceof TCPMessage)) {
-                System.err.println("[Comunicação] Resposta inválida do servidor.");
-                closeConnection(); // Fechar ligação
+            if (response == null) {
+                closeConnection();
                 return null;
             }
 
-            TCPMessage response = (TCPMessage) responseObj;
-
-            // 4. Processar a resposta
             if (response.getType() == MessageType.LOGIN_SUCCESS) {
                 if (response.getPayload() instanceof User) {
                     User user = (User) response.getPayload();
-                    System.out.println("[Comunicação] Login bem-sucedido para: " + user.getEmail());
-
-                    // TODO: Iniciar a thread de escuta de notificações assíncronas
-                    // this.notificationListener = new NotificationListener(in);
-                    // this.notificationListener.start();
-
-                    return user; // SUCESSO! Devolve o objeto User
-                } else {
-                    System.err.println("[Comunicação] Payload inválido para LOGIN_SUCCESS.");
-                    closeConnection();
-                    return null;
+                    //guardamos credenciais caso haja failover no futuro
+                    this.lastEmail = email;
+                    this.lastPassword = password;
+                    this.currentServerIp = this.serverIp;
+                    this.currentServerPort = this.serverPort;
+                    return user;
                 }
-            } else {
-                // Login falhou (ex: LOGIN_FAILED ou outro erro)
-                String errorMsg = (response.getPayload() instanceof String) ? (String) response.getPayload() : "Erro desconhecido.";
-                System.err.println("[Comunicação] Login falhou: " + errorMsg);
-                closeConnection(); // Fechar ligação em caso de falha
-                return null;
             }
+            closeConnection();
+            return null;
 
         } catch (Exception e) {
-            System.err.println("[Comunicação] Erro durante o login: " + e.getMessage());
-            closeConnection(); // Garante que fecha a ligação em caso de erro
+            closeConnection();
             return null;
         }
     }
 
-    /** Fecha a ligação TCP e os streams */
+    //registo (usa ligacao tcp temporaria)
+    public boolean registerEstudante(Estudante estudante, String password) {
+        if (serverIp == null) return false;
+        try (Socket tempSocket = new Socket(serverIp, serverPort);
+             ObjectOutputStream tempOut = new ObjectOutputStream(tempSocket.getOutputStream());
+             ObjectInputStream tempIn = new ObjectInputStream(tempSocket.getInputStream()))
+        {
+            Object[] payload = { estudante, password };
+            TCPMessage registerRequest = new TCPMessage(MessageType.REGISTER_ESTUDANTE, payload);
+            tempOut.writeObject(registerRequest);
+            tempOut.flush();
+            TCPMessage response = (TCPMessage) tempIn.readObject();
+            return response.getType() == MessageType.REGISTER_SUCCESS;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    public int registerDocente(Docente docente, String password, String codigoRegisto) {
+        if (serverIp == null) return 2;
+        try (Socket tempSocket = new Socket(serverIp, serverPort);
+             ObjectOutputStream tempOut = new ObjectOutputStream(tempSocket.getOutputStream());
+             ObjectInputStream tempIn = new ObjectInputStream(tempSocket.getInputStream()))
+        {
+            Object[] payload = { docente, password, codigoRegisto };
+            TCPMessage registerRequest = new TCPMessage(MessageType.REGISTER_DOCENTE, payload);
+            tempOut.writeObject(registerRequest);
+            tempOut.flush();
+            TCPMessage response = (TCPMessage) tempIn.readObject();
+            if (response.getType() == MessageType.REGISTER_SUCCESS) return 0;
+            String errorMsg = (String) response.getPayload();
+            if (errorMsg.contains("Código")) return 1;
+            return 2;
+        } catch (Exception e) {
+            return 2;
+        }
+    }
+
+    //fecha recursos e interrompe thread d escuta
     public void closeConnection() {
-        // TODO: Enviar mensagem de LOGOUT para o servidor antes de fechar?
         try {
+            if (notificationListener != null) notificationListener.interrupt();
             if (out != null) out.close();
             if (in != null) in.close();
             if (tcpSocket != null && !tcpSocket.isClosed()) tcpSocket.close();
-        } catch (Exception e) { /* ignorar */ }
-        System.out.println("[Comunicação] Ligação TCP fechada.");
+        } catch (Exception e) { }
+        finally {
+            out = null; in = null; tcpSocket = null; notificationListener = null;
+        }
     }
 
+    //metodos logica de negocio (sendRequest serve para tratar do failover)
+    public String createQuestion(Question question) {
+        TCPMessage response = sendRequest(new TCPMessage(MessageType.CREATE_QUESTION_REQUEST, question));
+        return (response != null && response.getType() == MessageType.CREATE_QUESTION_SUCCESS) ? (String) response.getPayload() : null;
+    }
 
+    public boolean submitAnswer(int idPergunta, String respostaLetra) {
+        if (tcpSocket == null) return false;
+        TCPMessage response = sendRequest(new TCPMessage(MessageType.SUBMIT_ANSWER, new AnswerPayload(idPergunta, respostaLetra)));
+        return (response != null && response.getType() == MessageType.SUBMIT_ANSWER_SUCCESS);
+    }
 
+    public List<Question> getMyQuestions(String filter) {
+        if (tcpSocket == null) return null;
+        TCPMessage response = sendRequest(new TCPMessage(MessageType.GET_MY_QUESTIONS_REQUEST, filter));
+        return (response != null && response.getType() == MessageType.GET_MY_QUESTIONS_SUCCESS) ? (List<Question>) response.getPayload() : null;
+    }
 
-    // TODO: Métodos futuros que a Vista irá chamar
-    /*
-    public User login(String email, String password) {
-        // 1. Estabelecer a ligação TCP permanente (tcpSocket)
-        // 2. Enviar um TCPMessage de LOGIN
-        // 3. Receber um TCPMessage de resposta
-        // 4. Iniciar a thread de escuta de notificações (se o login for bom)
-        // 5. Devolver o objeto User (ou null se falhar)
+    public Question getQuestionByCode(String accessCode) {
+        if (tcpSocket == null) return null;
+        TCPMessage response = sendRequest(new TCPMessage(MessageType.GET_QUESTION_BY_CODE, accessCode));
+        return (response != null && response.getType() == MessageType.GET_QUESTION_SUCCESS) ? (Question) response.getPayload() : null;
+    }
+
+    public boolean deleteQuestion(String accessCode) {
+        if (tcpSocket == null) return false;
+        TCPMessage response = sendRequest(new TCPMessage(MessageType.DELETE_QUESTION_REQUEST, accessCode));
+        return (response != null && response.getType() == MessageType.DELETE_QUESTION_SUCCESS);
+    }
+
+    public boolean editQuestion(String accessCode, Question newQuestionData) {
+        if (tcpSocket == null) return false;
+        TCPMessage response = sendRequest(new TCPMessage(MessageType.EDIT_QUESTION_REQUEST, new Object[]{accessCode, newQuestionData}));
+        return (response != null && response.getType() == MessageType.EDIT_QUESTION_SUCCESS);
+    }
+
+    public boolean updateProfileDocente(Docente docente, String newPassword) {
+        if (tcpSocket == null) return false;
+        TCPMessage response = sendRequest(new TCPMessage(MessageType.EDIT_PROFILE_DOCENTE_REQUEST, new Object[]{docente, newPassword}));
+        return (response != null && response.getType() == MessageType.EDIT_PROFILE_DOCENTE_SUCCESS);
+    }
+
+    public boolean updateProfileEstudante(Estudante estudante, String newPassword) {
+        if (tcpSocket == null) return false;
+        TCPMessage response = sendRequest(new TCPMessage(MessageType.EDIT_PROFILE_ESTUDANTE_REQUEST, new Object[]{estudante, newPassword}));
+        return (response != null && response.getType() == MessageType.EDIT_PROFILE_ESTUDANTE_SUCCESS);
+    }
+
+    public List<SubmittedAnswer> getMyAnswers() {
+        if (tcpSocket == null) return null;
+        TCPMessage response = sendRequest(new TCPMessage(MessageType.GET_MY_ANSWERS_REQUEST));
+        return (response != null && response.getType() == MessageType.GET_MY_ANSWERS_SUCCESS) ? (List<SubmittedAnswer>) response.getPayload() : null;
+    }
+
+    //classe auxiliar para passarmos a pergunta + resultados num só objeto
+    public static class QuestionFullReport implements java.io.Serializable {
+        public Question question;
+        public List<QuestionResult> results;
+        public QuestionFullReport(Question q, List<QuestionResult> r) { this.question = q; this.results = r; }
+    }
+
+    public QuestionFullReport getQuestionResults(String accessCode) {
+        if (tcpSocket == null) return null;
+        TCPMessage response = sendRequest(new TCPMessage(MessageType.GET_QUESTION_RESULTS_REQUEST, accessCode));
+        if (response != null && response.getType() == MessageType.GET_QUESTION_RESULTS_SUCCESS) {
+            Object[] parts = (Object[]) response.getPayload();
+            return new QuestionFullReport((Question) parts[0], (List<QuestionResult>) parts[1]);
+        }
         return null;
     }
-    */
+
+    //se a ligacao cair tenta reconectar-se
+    private boolean reconnectAndReauthenticate() {
+        System.err.println("[Failover] A tentar recuperar ligação...");
+        String oldServerIp = this.currentServerIp;
+        int oldServerPort = this.currentServerPort;
+        closeConnection();
+
+        //tenta descobrir novo sv
+        if (!findServer()) return false;
+
+        //se sv for o mesmo que caiu, espera 20s para a diretoria atualizar-se
+        if (this.serverIp.equals(oldServerIp) && this.serverPort == oldServerPort) {
+            try { Thread.sleep(20000); } catch (InterruptedException e) { return false; }
+            if (!findServer()) return false;
+        }
+        this.currentServerIp = this.serverIp;
+        this.currentServerPort = this.serverPort;
+
+        //tenta login
+        if (lastEmail != null && lastPassword != null) {
+            return login(this.lastEmail, this.lastPassword) != null;
+        }
+        return false;
+    }
+
+    // Wrapper para enviar pedidos com tratamento automático de erros de rede
+    private TCPMessage sendRequest(TCPMessage requestMsg) {
+        try {
+            responseQueue.clear();
+            out.writeObject(requestMsg);
+            out.flush();
+            TCPMessage response = responseQueue.poll(20, TimeUnit.SECONDS);
+            if (response == null) throw new Exception("Timeout");
+            return response;
+        } catch (Exception e) {
+            // Se falhar, tenta failover e reenvia o pedido
+            if (reconnectAndReauthenticate()) {
+                try {
+                    responseQueue.clear();
+                    out.writeObject(requestMsg);
+                    out.flush();
+                    return responseQueue.poll(20, TimeUnit.SECONDS);
+                } catch (Exception ex) { }
+            }
+        }
+        return null;
+    }
 }

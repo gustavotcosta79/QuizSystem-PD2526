@@ -1,20 +1,26 @@
 /*
  * Ficheiro: MainServer.java
- * VERSÃO ATUALIZADA - Compatível com ServerConfig (3 argumentos)
+ * VERSÃO COM DBManager, ClientListener e Sincronização de BD (DbSync) integrados.
  */
-package pt.isec.pd.tp.g11.server; // Package da sua estrutura
+package pt.isec.pd.tp.g11.server;
 
 import pt.isec.pd.tp.g11.common.enums.MessageType;
 import pt.isec.pd.tp.g11.common.messages.UDPMessage;
-import pt.isec.pd.tp.g11.server.net.ClientListener;
-import pt.isec.pd.tp.g11.server.net.HeartbeatService; // Package da sua estrutura
+import pt.isec.pd.tp.g11.server.net.*;
 import pt.isec.pd.tp.g11.common.utils.SerializationUtils;
+import pt.isec.pd.tp.g11.server.db.DatabaseManager;
 
+// Imports Java
+import java.io.FileOutputStream;
+import java.io.InputStream;
 import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.ServerSocket;
+import java.net.Socket;
 import java.net.SocketTimeoutException;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 public class MainServer {
 
@@ -22,19 +28,30 @@ public class MainServer {
 
     public static void main(String[] args) {
         ServerConfig config;
-        ServerSocket clientSocket = null; // Declarar fora para se manterem vivos
-        ServerSocket dbSyncSocket = null; // Declarar fora
+        ServerSocket clientSocket = null; // Socket TCP para Clientes
+        ServerSocket dbSyncSocket = null; // Socket TCP para Sincronização de BD
+        DatabaseManager dbManager = null;
         int clientPort;
         int dbPort;
-        String[] primaryServerInfo; //
+        String[] primaryServerInfo;
+
+
 
         try {
-            // 1. Ler os argumentos
+            // Ler os argumentos da linha de comando
             config = new ServerConfig(args);
             System.out.println("[MainServer] Configuração carregada. A ligar à diretoria em " +
                     config.getDirectoryAddress().getHostAddress() + ":" + config.getDirectoryPort());
 
-            // 2. Abrir os ServerSockets TCP em portos automáticos
+            // INICIAR O DATABASE MANAGER
+            System.out.println("[MainServer] A inicializar Database Manager para: " + config.getDbPath());
+            dbManager = new DatabaseManager(config.getDbPath());
+            if (!dbManager.connect()) {
+                System.err.println("[MainServer] Falha ao ligar/criar a base de dados. A terminar.");
+                return;
+            }
+
+            // Abrir os ServerSockets TCP em portos automáticos
             clientSocket = new ServerSocket(0);
             dbSyncSocket = new ServerSocket(0);
             clientPort = clientSocket.getLocalPort();
@@ -43,13 +60,14 @@ public class MainServer {
             System.out.println("[MainServer] A escutar Clientes em TCP:" + clientPort);
             System.out.println("[MainServer] A escutar BD Sync em TCP:" + dbPort);
 
-            // 3. FAZER O REGISTO SÍNCRONO (A tua lógica está perfeita)
+            // FAZER O REGISTO SÍNCRONO NO SERVIÇO DE DIRETORIA
             System.out.println("[MainServer] A registar-se no diretório...");
             String[] registerPayload = { String.valueOf(clientPort), String.valueOf(dbPort) };
             UDPMessage registerMsg = new UDPMessage(MessageType.SERVER_REGISTER, registerPayload);
 
             try (DatagramSocket socket = new DatagramSocket()) {
                 socket.setSoTimeout(DIRECTORY_RESPONSE_TIMEOUT_MS);
+
                 byte[] sendData = SerializationUtils.serialize(registerMsg);
                 DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, config.getDirectoryAddress(), config.getDirectoryPort());
                 socket.send(sendPacket);
@@ -57,63 +75,163 @@ public class MainServer {
                 byte[] receiveData = new byte[4096];
                 DatagramPacket receivePacket = new DatagramPacket(receiveData, receiveData.length);
                 socket.receive(receivePacket);
+
                 UDPMessage responseMsg = (UDPMessage) SerializationUtils.deserialize(receiveData);
 
                 if (responseMsg.getType() == MessageType.SERVER_REGISTER_OK) {
                     primaryServerInfo = responseMsg.getPayload();
-                    System.out.println("[MainServer] Registado com sucesso. O primário é: " + primaryServerInfo[0]);
+                    System.out.println("[MainServer] Registado com sucesso. O primário reportado é: " + primaryServerInfo[0] + " (Porto BD: " + primaryServerInfo[1] + ")");
                 } else {
                     System.err.println("[MainServer] Registo falhado: " + (responseMsg.getPayload() != null ? responseMsg.getPayload()[0] : "ERRO"));
+                    if (dbManager != null) dbManager.disconnect();
                     return;
                 }
             } catch (SocketTimeoutException e) {
-                System.err.println("[MainServer] O serviço de diretoria não respondeu. A terminar.");
+                System.err.println("[MainServer] O serviço de diretoria não respondeu (timeout). A terminar.");
+                if (dbManager != null) dbManager.disconnect();
                 return;
             }
 
-            // 4. VERIFICAR SE SOMOS PRIMÁRIOS E SINCRONIZAR BD (A tua lógica está perfeita)
+            // VERIFICAR SE ESTE SERVIDOR É O PRIMÁRIO OU BACKUP
+            boolean isPrimary = false;
 
-
-            String myIp = InetAddress.getLoopbackAddress().getHostAddress(); /// para testar localmente
-            //String myIp = InetAddress.getLocalHost().getHostAddress(); // Nota: Pode falhar em algumas configs de rede (Esta função não devolve 127.0.0.1; devolve o IP da tua rede (ex: 192.168.1.X). A tua verificação if ("127.0.0.1".equals("192.168.1.X") ...) falha, e o servidor pensa (erradamente) que é um BACKUP.
-            if (primaryServerInfo[0].equals(myIp) && Integer.parseInt(primaryServerInfo[1]) == dbPort) {
-                System.out.println("[MainServer] Este servidor é o PRIMÁRIO.");
-                // TODO: Iniciar a BD (e criar se não existir)
-            } else {
-                System.out.println("[MainServer] Este servidor é um BACKUP.");
-                System.out.println("[MainServer] TODO: Sincronizar a BD com o primário.");
+            // Compara o porto reportado pela diretoria com o meu porto local
+            if (Integer.parseInt(primaryServerInfo[1]) == dbPort) {
+                isPrimary = true;
             }
 
-            // 5. Iniciar os serviços de background
-            HeartbeatService heartbeat = new HeartbeatService(config, clientPort, dbPort);
+            if (isPrimary) {
+                System.out.println("[MainServer] >>> ESTE SERVIDOR É O PRIMÁRIO <<<");
+
+
+            } else {
+                System.out.println("[MainServer] >>> ESTE SERVIDOR É BACKUP <<<");
+                System.out.println("[MainServer] A sincronizar com o Primário (" + primaryServerInfo[0] + ":" + primaryServerInfo[1] + ")...");
+
+                // === LÓGICA DE BACKUP: DOWNLOAD DA BD ===
+
+                // Desligar da BD local temporariamente (para poder substituir o ficheiro)
+                dbManager.disconnect();
+                String localDbPath = dbManager.getDbFilePath();
+
+                boolean syncSuccess = false;
+
+                // Conecta ao Primário no IP e Porto de BD indicados pela diretoria
+                try (Socket socket = new Socket(primaryServerInfo[0], Integer.parseInt(primaryServerInfo[1]));
+                     InputStream in = socket.getInputStream();
+                     FileOutputStream fileOut = new FileOutputStream(localDbPath)) {
+
+                    System.out.println("[MainServer] A descarregar base de dados...");
+
+                    byte[] buffer = new byte[4096];
+                    int bytesRead;
+                    while ((bytesRead = in.read(buffer)) != -1) {
+                        fileOut.write(buffer, 0, bytesRead);
+                    }
+
+                    System.out.println("[MainServer] Download da base de dados concluído!");
+                    syncSuccess = true;
+
+                } catch (Exception e) {
+                    System.err.println("[MainServer] FALHA CRÍTICA AO SINCRONIZAR COM PRIMÁRIO: " + e.getMessage());
+                    // Se falhar a sincronização inicial, o servidor deve terminar para evitar inconsistências
+                    if (clientSocket != null) clientSocket.close();
+                    if (dbSyncSocket != null) dbSyncSocket.close();
+                    return;
+                }
+
+                // Voltar a ligar à BD (agora com os dados novos copiados do primário)
+                if (syncSuccess) {
+                    if (!dbManager.connect()) {
+                        System.err.println("[MainServer] Erro ao religar à BD após sincronização.");
+                        return;
+                    }
+                    System.out.println("[MainServer] BD recarregada com sucesso e pronta.");
+                }
+            }
+
+            // INICIAR OS SERVIÇOS DE BACKGROUND (THREADS)
+
+            // Assim, se este backup virar Primary, já está pronto a enviar a BD.
+            String currentDbPath = dbManager.getDbFilePath();
+            if (currentDbPath != null) {
+                System.out.println("[MainServer] A ativar serviço de envio de BD (DbSyncListener)...");
+                DbSyncListener dbSyncListener = new DbSyncListener(dbSyncSocket, currentDbPath);
+                dbSyncListener.start();
+            }
+
+            // Serviço de Heartbeat (envia UDP para diretoria e Multicast para cluster)
+            HeartbeatService heartbeat = new HeartbeatService(config, clientPort, dbPort /*, dbManager */);
             heartbeat.start();
 
-            // 6. Iniciar a thread que escuta clientes
-            // ** CORREÇÃO: Passar o socket que continua aberto **
-            ///
+
+            // Criar a lista partilhada de clientes ativos (thread-safe)
+            List<ClientHandler> activeClients = new CopyOnWriteArrayList<>();
+
+            // Passar a lista para o ClientListener
             System.out.println("[MainServer] A iniciar ClientListener...");
-            ClientListener clientListener = new ClientListener(clientSocket);
-            clientListener.start(); // <-- Isto vai manter o servidor vivo
-            ///
-            // 7. TODO: Iniciar a thread que escuta pedidos de BD
-            // DbSyncListener dbSyncListener = new DbSyncListener(dbSyncSocket);
-            // dbSyncListener.start();
+            ClientListener clientListener = new ClientListener(clientSocket, dbManager, heartbeat, activeClients);
+            clientListener.start();
 
-            System.out.println("[MainServer] Servidor operacional.");
-            // REMOVEMOS O Thread.sleep(20000) porque o ClientListener
-            // já mantém o servidor vivo.
-            Thread.sleep(20000); // 20 segundos
+            // Iniciar MulticastListener
+            MulticastListener mcListener = new MulticastListener(config.getMulticastAddress(), dbManager, dbPort);
+            mcListener.start();
 
+            System.out.println("[MainServer] Servidor operacional e pronto a receber clientes.");
+
+            // Shutdown Hook para fechar recursos ordenadamente
+            DatabaseManager finalDbManager = dbManager;
+            ServerSocket finalClientSocket = clientSocket;
+            ServerSocket finalDbSyncSocket = dbSyncSocket;
+            ServerConfig finalConfig = config;
+
+            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                System.out.println("\n[MainServer] A desligar servidor (Shutdown Hook)...");
+
+                // ENVIAR O PEDIDO DE UNREGISTER À DIRETORIA
+                try (DatagramSocket socket = new DatagramSocket()) {
+                    UDPMessage msg = new UDPMessage(MessageType.SERVER_UNREGISTER);
+                    byte[] data = SerializationUtils.serialize(msg);
+
+                    DatagramPacket packet = new DatagramPacket(
+                            data,
+                            data.length,
+                            finalConfig.getDirectoryAddress(),
+                            finalConfig.getDirectoryPort()
+                    );
+
+                    socket.send(packet);
+                    System.out.println("[MainServer] Pedido de remoção enviado à diretoria.");
+
+                } catch (Exception e) {
+                    System.err.println("[MainServer] Erro ao enviar unregister: " + e.getMessage());
+                }
+
+                // FECHAR SOCKETS TCP (Limpeza Local)
+                try {
+                    if (finalClientSocket != null && !finalClientSocket.isClosed()) finalClientSocket.close();
+                    if (finalDbSyncSocket != null && !finalDbSyncSocket.isClosed()) finalDbSyncSocket.close();
+                } catch (Exception e) { System.err.println("[Shutdown Hook] Erro ao fechar sockets: " + e.getMessage()); }
+
+                // FECHAR BD
+                if (finalDbManager != null) {
+                    finalDbManager.disconnect();
+                }
+                System.out.println("[MainServer] Servidor desligado.");
+            }));
 
         } catch (Exception e) {
-            System.err.println("[MainServer] Erro fatal ao arrancar: " + e.getMessage());
+            System.err.println("[MainServer] Erro fatal durante o arranque: " + e.getMessage());
             e.printStackTrace();
 
-            // Garantir que os sockets fecham em caso de erro no arranque
             try {
                 if (clientSocket != null) clientSocket.close();
                 if (dbSyncSocket != null) dbSyncSocket.close();
-            } catch (Exception ex) { /* ignorar */ }
+                if (dbManager != null) dbManager.disconnect();
+            } catch (Exception ex) {  }
+
+        System.out.println("[MainServer] A terminar processo (System.exit).");
+        System.exit(1); // Garante que o Heartbeat e todas as threads morrem
         }
     }
 }
